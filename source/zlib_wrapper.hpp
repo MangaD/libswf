@@ -14,7 +14,10 @@
 
 namespace zlib {
 
-	std::vector<uint8_t> zlib_compress(const std::vector<uint8_t> &in_data, const int level);
+	std::vector<uint8_t> zlib_compress(const uint8_t* in_data, const size_t in_data_size, const int level);
+	inline std::vector<uint8_t> zlib_compress(const std::vector<uint8_t> &in_data, const int level) {
+		return zlib_compress(in_data.data(), in_data.size(), level);
+	}
 	std::vector<uint8_t> zlib_decompress(const std::vector<uint8_t> &in_data);
 
 	class zlib_exception : public std::exception {

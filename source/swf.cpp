@@ -462,15 +462,10 @@ vector<uint8_t> SWF::toBytes() const {
 vector<uint8_t> SWF::zlibCompress(const vector<uint8_t> &swf) {
 
 	vector<uint8_t> buffer{'C', 'W', 'S', (this->version >= 6 ? this->version : static_cast<uint8_t>(6))};
-
-	// Length
-	buffer.insert(buffer.end(), swf.begin() + 4, swf.begin() + 8);
-
-	vector<uint8_t> tmp(swf.begin() + 8, swf.end());
-	vector<uint8_t> compressed = zlib::zlib_compress(tmp, Z_BEST_COMPRESSION);
-
+	buffer.reserve(buffer.size() + swf.size()); // more efficient
+	buffer.insert(buffer.end(), swf.begin() + 4, swf.begin() + 8); // Length
+	vector<uint8_t> compressed = zlib::zlib_compress(swf.data()+8, swf.size()-8, Z_BEST_COMPRESSION);
 	buffer.insert(buffer.end(), compressed.begin(), compressed.end());
-
 	return buffer;
 }
 
@@ -490,9 +485,8 @@ vector<uint8_t> SWF::zlibDecompress(const vector<uint8_t> &swf) {
 vector<uint8_t> SWF::lzmaCompress(const vector<uint8_t> &swf) {
 
 	vector<uint8_t> buffer{'Z', 'W', 'S', (this->version >= 13 ? this->version : static_cast<uint8_t>(13))};
-
-	// Length
-	buffer.insert(buffer.end(), swf.begin() + 4, swf.begin() + 8);
+	buffer.reserve(buffer.size() + swf.size()); // more efficient
+	buffer.insert(buffer.end(), swf.begin() + 4, swf.begin() + 8); // Length
 
 	vector<uint8_t> tmp(swf.begin() + 8, swf.end());
 	//vector<uint8_t> compressed = xz_lzma_compress(tmp); // Using XZ Utils

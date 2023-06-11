@@ -16,302 +16,404 @@
 #include "swf.hpp" // swf_exception
 #include "swf_utils.hpp" // debug
 
-/**
- * For ordering the JSON elements in a FIFO manner, this is useful because:
- * 1. Easier to debug, just compare original decompressed file with new one.
- * 2. For ordering elements in ECMA arrays, as reading them out of order may not work out well.
- *
- * https://github.com/nlohmann/json/issues/485#issuecomment-333652309
- * A workaround to give to use fifo_map as map, we are just ignoring the 'less' compare
- */
-template<class K, class V, class dummy_compare, class A>
-using my_workaround_fifo_map = nlohmann::fifo_map<K, V, nlohmann::fifo_map_compare<K>, A>;
-using json = nlohmann::basic_json<my_workaround_fifo_map>;
-
-// For normal use, without ordering
-//using json = nlohmann::json;
-
 using namespace std;
 using namespace swf;
 
-/**
- * JSON: https://github.com/nlohmann/json
- */
-AMF0::AMF0(const uint8_t *buffer, const size_t buffer_size) : jsonObj() {
+AMF0::AMF0(const uint8_t* buffer, size_t &pos) : object() {
+	this->object = deserialize(buffer, pos);
+}
 
-	if (buffer_size == 0) {
-		throw swf_exception("AMF0: No data given to parse.");
+amf0type_sptr AMF0::deserialize(const uint8_t* buffer, size_t &pos) {
+
+	/**
+	 * Section 2.7, 2.8 of amf0-file-format-specification.pdf
+	 */
+	if (buffer[pos] == AMF0::UNDEFINED_MARKER ||
+	    buffer[pos] == AMF0::NULL_MARKER ||
+	    buffer[pos] == AMF0::OBJECT_END_MARKER) {
+
+		auto obj = make_shared<AMF0_TYPE>(buffer[pos]);
+		++pos;
+		return obj;
 	}
+	/**
+	 * See section 2.2 of amf0-file-format-specification.pdf
+	 */
+	else if (buffer[pos] == AMF0::NUMBER_MARKER) {
 
-	size_t pos = 0;
+		auto obj = make_shared<AMF0_NUMBER>();
+		++pos;
+		obj->d = AMF0::readDouble(buffer, pos);
+		return obj;
+	}
+	/**
+	 * See section 2.3 of amf0-file-format-specification.pdf
+	 */
+	else if (buffer[pos] == AMF0::BOOLEAN_MARKER) {
 
-	if (buffer[pos] == AMF0::TYPED_OBJECT_MARKER) {
+		auto obj = make_shared<AMF0_BOOLEAN>();
+		++pos;
+		obj->b = buffer[pos++];
+		return obj;
+	}
+	/**
+	 * See section 2.4 of amf0-file-format-specification.pdf
+	 */
+	else if (buffer[pos] == AMF0::STRING_MARKER) {
+
+		auto obj = make_shared<AMF0_STRING>();
+		++pos;
+		obj->s = decodeString(buffer, pos);
+		return obj;
+	}
+	/**
+	 * See section 2.5 of amf0-file-format-specification.pdf
+	 */
+	else if (buffer[pos] == AMF0::OBJECT_MARKER) {
+
+		auto obj = make_shared<AMF0_OBJECT>();
 		++pos;
 
-		// Get class name
-		uint16_t len = bytestodec_be<uint16_t>(buffer+pos);
-		pos += 2;
+		string key = decodeString(buffer, pos);
+		amf0type_sptr value = this->deserialize(buffer, pos);
 
-		string cn{buffer + pos, buffer + pos + len};
-		pos += len;
+		while (!(key.empty() && value->type == AMF0::OBJECT_END_MARKER)) {
+			obj->keyValuePairs.emplace_back(key, value);
+			key = decodeString(buffer, pos);
+			value = this->deserialize(buffer, pos);
+		}
 
-		// Creates a key with the class name and an object as value
-		json j;
-		jsonObj.emplace(cn, j);
-
-		this->parseAMF0Object(buffer, buffer_size, pos, jsonObj[cn]);
-	} else {
-		throw swf_exception("Sorry, only serialization of objects implemented.");
+		return obj;
 	}
+	/**
+	 * See section 2.9 of amf0-file-format-specification.pdf
+	 */
+	else if (buffer[pos] == AMF0::REFERENCE_MARKER) {
+
+		auto obj = make_shared<AMF0_REFERENCE>();
+		++pos;
+		obj->index = readU16(buffer, pos);
+		return obj;
+	}
+	/**
+	 * See section 2.10 of amf0-file-format-specification.pdf
+	 */
+	else if (buffer[pos] == AMF0::ECMA_ARRAY_MARKER) {
+
+		auto obj = make_shared<AMF0_ECMA_ARRAY>();
+		++pos;
+
+		obj->associativeCount = readU32(buffer, pos);
+
+		string key = decodeString(buffer, pos);
+		amf0type_sptr value = this->deserialize(buffer, pos);
+
+		while (!(key.empty() && value->type == AMF0::OBJECT_END_MARKER)) {
+			obj->keyValuePairs.emplace_back(key, value);
+			key = decodeString(buffer, pos);
+			value = this->deserialize(buffer, pos);
+		}
+
+		return obj;
+	}
+	/**
+	 * See section 2.12 of amf0-file-format-specification.pdf
+	 */
+	else if (buffer[pos] == AMF0::STRICT_ARRAY_MARKER) {
+
+		auto obj = make_shared<AMF0_STRICT_ARRAY>();
+		++pos;
+
+		obj->arrayCount = readU32(buffer, pos);
+		for (uint32_t i = 0; i < obj->arrayCount; ++i) {
+			obj->values.emplace_back(this->deserialize(buffer, pos));
+		}
+
+		return obj;
+	}
+	/**
+	 * See section 2.18 of amf0-file-format-specification.pdf
+	 */
+	else if (buffer[pos] == AMF0::TYPED_OBJECT_MARKER) {
+
+		auto obj = make_shared<AMF0_TYPED_OBJECT>();
+		++pos;
+
+		obj->className = decodeString(buffer, pos);
+
+		string key = decodeString(buffer, pos);
+		amf0type_sptr value = this->deserialize(buffer, pos);
+
+		while (!(key.empty() && value->type == AMF0::OBJECT_END_MARKER)) {
+			obj->keyValuePairs.emplace_back(key, value);
+			key = decodeString(buffer, pos);
+			value = this->deserialize(buffer, pos);
+		}
+
+		return obj;
+	}
+	else {
+		stringstream stream;
+		stream << hex << setw(2) << setfill('0') << static_cast<int>(buffer[pos]);
+		throw swf_exception("Deserialize: Position: " + to_string(pos) + ". Marker '0x" +
+		                    stream.str() + "' not valid or not implemented.");
+	}
+
 }
 
-void AMF0::parseAMF0Object(const uint8_t *buffer, const size_t buffer_size, size_t &pos, json &obj) {
+std::vector<uint8_t> AMF0::serialize(const amf0type_sptr & value) {
 
-	string varName;
-	bool readVarName = false;
+	std::vector<uint8_t> vec { value->type };
 
-	while (pos < buffer_size) {
+	if (value->type == AMF0::UNDEFINED_MARKER ||
+	    value->type == AMF0::NULL_MARKER ||
+	    value->type == AMF0::OBJECT_END_MARKER) {
 
-		if (!readVarName) {
-			// Get variable name
-			uint16_t len = bytestodec_be<uint16_t>(buffer + pos);
-			pos += 2;
+		return vec;
 
-			varName = {buffer + pos, buffer + pos + len};
-			pos += len;
+	} else if (value->type == AMF0::NUMBER_MARKER) {
 
-			readVarName = true;
+		auto valD = static_cast<AMF0_NUMBER *>(value.get());
+		concatVectorWithContainer(vec, AMF0::writeDouble(valD->d));
+
+	} else if (value->type == AMF0::BOOLEAN_MARKER) {
+
+		auto valB = static_cast<AMF0_BOOLEAN *>(value.get());
+		vec.emplace_back(static_cast<uint8_t>(valB->b));
+
+	} else if (value->type == AMF0::STRING_MARKER) {
+
+		auto valS = static_cast<AMF0_STRING *>(value.get());
+		concatVectorWithContainer(vec, AMF0::encodeString(valS->s));
+
+	} else if (value->type == AMF0::OBJECT_MARKER) {
+
+		auto valO = static_cast<AMF0_OBJECT *>(value.get());
+
+		for (auto &p : valO->keyValuePairs) {
+			concatVectorWithContainer(vec, AMF0::encodeString(p.first));
+			concatVectorWithContainer(vec, this->serialize(p.second));
 		}
-		/// See section 2.2 of amf0-file-format-specification.pdf
-		else if (buffer[pos] == AMF0::NUMBER_MARKER) {
-			++pos;
 
-			double d = AMF0::readDouble(buffer, pos);
+		concatVectorWithContainer(vec, AMF0::encodeString(""));
+		vec.emplace_back(AMF0::OBJECT_END_MARKER);
 
-			/**
-			 * NaN can have many different representations, and
-			 * infinite can have 2 representations (positive and negative),
-			 * so we store an array of bytes for them to keep their
-			 * exact representation.
-			 */
-			if(isfinite(d)) {
-				obj[varName] = d;
-			} else {
-				obj[varName];
-				for (size_t i = 0; i < 8; ++i) {
-					obj[varName].emplace_back(buffer[pos-8+i]);
+	} else if (value->type == AMF0::REFERENCE_MARKER) {
+
+		auto valR = static_cast<AMF0_REFERENCE *>(value.get());
+		concatVectorWithContainer(vec, this->writeU16(valR->index));
+
+	} else if (value->type == AMF0::ECMA_ARRAY_MARKER) {
+
+		auto valO = static_cast<AMF0_ECMA_ARRAY *>(value.get());
+
+		concatVectorWithContainer(vec, this->writeU32(valO->associativeCount));
+
+		for (auto &p : valO->keyValuePairs) {
+			concatVectorWithContainer(vec, AMF0::encodeString(p.first));
+			concatVectorWithContainer(vec, this->serialize(p.second));
+		}
+
+		concatVectorWithContainer(vec, AMF0::encodeString(""));
+		vec.emplace_back(AMF0::OBJECT_END_MARKER);
+
+	} else if (value->type == AMF0::STRICT_ARRAY_MARKER) {
+
+		auto valA = static_cast<AMF0_STRICT_ARRAY *>(value.get());
+
+		concatVectorWithContainer(vec, this->writeU32(valA->arrayCount));
+
+		for (auto &p : valA->values) {
+			concatVectorWithContainer(vec, this->serialize(p));
+		}
+
+	} else if (value->type == AMF0::TYPED_OBJECT_MARKER) {
+
+		auto valO = static_cast<AMF0_TYPED_OBJECT *>(value.get());
+
+		concatVectorWithContainer(vec, AMF0::encodeString(valO->className));
+
+		for (auto &p : valO->keyValuePairs) {
+			concatVectorWithContainer(vec, AMF0::encodeString(p.first));
+			concatVectorWithContainer(vec, this->serialize(p.second));
+		}
+
+		concatVectorWithContainer(vec, AMF0::encodeString(""));
+		vec.emplace_back(AMF0::OBJECT_END_MARKER);
+
+	} else {
+		stringstream stream;
+		stream << hex << setw(2) << setfill('0') << static_cast<int>(value->type);
+		throw swf_exception("Serialize: Marker '0x" + stream.str() + "' not valid or not implemented.");
+	}
+
+	return vec;
+}
+
+json AMF0::to_json(const amf0type_sptr & type) {
+
+	json j;
+
+	if (type->type == AMF0::UNDEFINED_MARKER) {
+		j = "__AMF0_UNDEFINED__";
+	}
+	else if (type->type == AMF0::NULL_MARKER) {
+		j = nullptr;
+	}
+	else if (type->type == AMF0::BOOLEAN_MARKER) {
+		auto b = static_cast<AMF0_BOOLEAN *>(type.get());
+		j = b->b;
+	}
+	else if (type->type == AMF0::NUMBER_MARKER) {
+		auto d = static_cast<AMF0_NUMBER *>(type.get());
+		// NaN can have many different representations, and
+		// infinite can have 2 representations (positive and negative),
+		// so we store an array of bytes for them to keep their
+		// exact representation.
+		if(isfinite(d->d)) {
+			j = d->d;
+		} else {
+			json j2;
+			j2.emplace_back("__AMF0_DOUBLE_NAN__");
+			auto arr = AMF0::writeDouble(d->d);
+			for (size_t i = 0; i < 8; ++i) {
+				j2.emplace_back(arr[i]);
+			}
+			j = j2;
+		}
+	}
+	else if (type->type == AMF0::STRING_MARKER) {
+		auto s = static_cast<AMF0_STRING *>(type.get());
+		j = s->s;
+	}
+	else if (type->type == AMF0::ECMA_ARRAY_MARKER) {
+		auto arr = static_cast<AMF0_ECMA_ARRAY *>(type.get());
+		/**
+		 * ECMA arrays work like objects except they are prefixed with an "associative-count".
+		 * But sometimes this count is zero and the array contains objects,
+		 * I suspect, based on observation, that the count reflects the count of
+		 * ordinal indices.
+		 */
+		j["__AMF0_ARRAY_ASSOCIATIVE_COUNT__"] = arr->associativeCount;
+		for (auto& a : arr->keyValuePairs) {
+			j.emplace(a.first, AMF0::to_json(a.second));
+		}
+	}
+	else if (type->type == AMF0::STRICT_ARRAY_MARKER) {
+		auto arr = static_cast<AMF0_STRICT_ARRAY *>(type.get());
+
+		j = json::array(); // important for empty arrays
+
+		/**
+		 * I am assuming there is no need to store arr->arrayCount
+		 * because it should be equal to the number of values in the array.
+		 */
+		if(!arr->values.empty()) {
+			for (auto& a : arr->values) {
+				j.emplace_back(AMF0::to_json(a));
+			}
+		}
+	}
+	else if (type->type == AMF0::REFERENCE_MARKER) {
+		auto ref = static_cast<AMF0_REFERENCE *>(type.get());
+		j.emplace("__AMF0_REFERENCE__", ref->index);
+	}
+	else if (type->type == AMF0::OBJECT_MARKER) {
+		auto obj = static_cast<AMF0_OBJECT *>(type.get());
+		for (auto& a : obj->keyValuePairs) {
+			j.emplace(a.first, AMF0::to_json(a.second));
+		}
+	}
+	else if (type->type == AMF0::TYPED_OBJECT_MARKER) {
+
+		auto obj = static_cast<AMF0_TYPED_OBJECT *>(type.get());
+		j.emplace("__AMF0_OBJECT_CLASSNAME__", obj->className);
+		for (auto& a : obj->keyValuePairs) {
+			j.emplace(a.first, AMF0::to_json(a.second));
+		}
+	}
+	else {
+		stringstream stream;
+		stream << hex << setw(2) << setfill('0') << static_cast<int>(type->type);
+		throw swf_exception("Type '0x" + stream.str() + "' not implemented in JSON.");
+	}
+
+	return j;
+}
+
+amf0type_sptr AMF0::from_json(const json& j) {
+
+	if (j.is_null()) {
+		return make_shared<AMF0_TYPE>(AMF0::NULL_MARKER);
+	} else if (j.is_boolean()) {
+		return make_shared<AMF0_BOOLEAN>(j.get<bool>());
+	} else if (j.is_number()) {
+		return make_shared<AMF0_NUMBER>(j.get<double>());
+	} else if (j.is_string()) {
+		string s = j.get<string>();
+		if (s == "__AMF0_UNDEFINED__") {
+			return make_shared<AMF0_TYPE>(AMF0::UNDEFINED_MARKER);
+		} else {
+			return make_shared<AMF0_STRING>(s);
+		}
+	} else if (j.is_array()) {
+		if (j.size() == 9 && j[0] == "__AMF0_DOUBLE_NAN__") {
+			array<uint8_t, 8> arr;
+			for (size_t i = 0; i < 8; ++i) {
+				if (j[i+1].is_number_integer()) {
+					arr[i] = j[i+1];
+				} else {
+					throw swf_exception("Error reading non-finite double. Byte is not an integer.");
 				}
 			}
-
-			readVarName = false;
-		}
-		/// See section 2.3 of amf0-file-format-specification.pdf
-		else if (buffer[pos] == AMF0::BOOLEAN_MARKER) {
-			++pos;
-
-			bool b = buffer[pos];
-			++pos;
-
-			obj[varName] = b;
-
-			readVarName = false;
-		}
-		/// See section 2.4 of amf0-file-format-specification.pdf
-		else if (buffer[pos] == AMF0::STRING_MARKER) {
-			++pos;
-
-			uint16_t len = bytestodec_be<uint16_t>(buffer + pos);;
-			pos += 2;
-
-			string s{buffer + pos, buffer + pos + len};
-			pos += len;
-
-			obj[varName] = s;
-
-			readVarName = false;
-		}
-		/// See section 2.5 of amf0-file-format-specification.pdf
-		else if (buffer[pos] == AMF0::OBJECT_MARKER) {
-			++pos;
-
-			// Creates a key with the class name and an object as value
-			json j;
-			obj.emplace(varName, j);
-
-			this->parseAMF0Object(buffer, buffer_size, pos, obj[varName]);
-
-			readVarName = false;
-		}
-		/// See section 2.7 of amf0-file-format-specification.pdf
-		else if (buffer[pos] == AMF0::NULL_MARKER) {
-			++pos;
-
-			obj[varName] = nullptr;
-
-			readVarName = false;
-		}
-		/// See section 2.8 of amf0-file-format-specification.pdf
-		else if (buffer[pos] == AMF0::UNDEFINED_MARKER) {
-			++pos;
-
-			obj[varName] = "HFW_undefinedXXX"; // XXX Don't know a better way to distinguish from null
-
-			readVarName = false;
-		}
-		/// See section 2.9 of amf0-file-format-specification.pdf
-		else if (buffer[pos] == AMF0::REFERENCE_MARKER) {
-			++pos;
-
-			uint16_t index = bytestodec_be<uint16_t>(buffer + pos);
-			pos += 2;
-
-			json j;
-			j["HFW_referenceXXX"] = index; // XXX way I found to have a reference
-			obj.emplace(varName, j);
-
-			readVarName = false;
-		}
-		/// See section 2.10 of amf0-file-format-specification.pdf
-		else if (buffer[pos] == AMF0::ECMA_ARRAY_MARKER) {
-			++pos;
-
-			uint32_t aLen = bytestodec_be<uint32_t>(buffer + pos);
-			pos += 4;
-
-			/**
-			 * ECMA arrays work like objects except they are prefixed with a length.
-			 * But sometimes this length is zero and the array contains objects,
-			 * I don't know why.
-			 */
-			obj[varName];
-			obj[varName]["HFW_ArrayLenXXX"] = aLen;
-
-			this->parseAMF0Object(buffer, buffer_size, pos, obj[varName]);
-
-			readVarName = false;
-		}
-		/// at the end of typed object, anonymous object and array
-		/// See section 2.11 of amf0-file-format-specification.pdf
-		else if (buffer[pos] == AMF0::OBJECT_END_MARKER) {
-			++pos;
-			return;
-		}
-		/// See section 2.18 of amf0-file-format-specification.pdf
-		else if (buffer[pos] == AMF0::TYPED_OBJECT_MARKER) {
-			++pos;
-
-			// Get class name
-			uint16_t len = bytestodec_be<uint16_t>(buffer + pos);
-			pos += 2;
-
-			string cn{buffer + pos, buffer + pos + len};
-			pos += len;
-
-			// Creates a key with the class name and an object as value
-			json j;
-			j["HFW_classNameXXX"] = cn; // XXX way I found to have a named object
-			obj.emplace(varName, j);
-
-			this->parseAMF0Object(buffer, buffer_size, pos, obj[varName]);
-
-			readVarName = false;
-		} else {
-			std::stringstream stream;
-			stream << std::hex << setw(2) << setfill('0') << static_cast<int>(buffer[pos]);
-			throw swf_exception("Position: " + to_string(pos) + ". Marker '0x" + stream.str() + "' not valid or not implemented.");
-		}
-	}
-}
-
-vector<uint8_t> AMF0::fromJSON(const string &js) {
-
-	vector<uint8_t> bytes;
-	json obj = json::parse(js);
-
-	bytes.emplace_back(AMF0::TYPED_OBJECT_MARKER);
-
-	// class name's length
-	const string &key = obj.items().begin().key();
-	AMF0::writeStringWithLenPrefixU16(bytes, key);
-
-	for (auto &el : obj[key].items()) {
-		AMF0::writeStringWithLenPrefixU16(bytes, el.key());
-		parseJSONElement(bytes, el.value());
-	}
-
-	//end of object
-	array<uint8_t, 3> endObj = {0x00, 0x00, AMF0::OBJECT_END_MARKER};
-	concatVectorWithContainer(bytes, endObj);
-
-	return bytes;
-}
-
-void AMF0::parseJSONElement(vector<uint8_t> &buffer, const json &el) {
-
-	if (el.is_null()) {
-		buffer.emplace_back(AMF0::NULL_MARKER);
-	} else if (el.is_boolean()) {
-		buffer.emplace_back(AMF0::BOOLEAN_MARKER);
-		if (el.get<bool>() == true) {
-			buffer.emplace_back(0x01);
-		} else {
-			buffer.emplace_back(0x00);
-		}
-	} else if (el.is_number()) {
-		buffer.emplace_back(AMF0::NUMBER_MARKER);
-		double d = el.get<double>();
-		array<uint8_t, 8> num_b = AMF0::writeDouble(d);
-		concatVectorWithContainer(buffer, num_b);
-	} else if (el.is_object()) {
-
-		if (el.find("HFW_ArrayLenXXX") != el.end() &&
-		    el["HFW_ArrayLenXXX"].is_number()) {
-			buffer.emplace_back(AMF0::ECMA_ARRAY_MARKER);
-			array<uint8_t, 4> len = dectobytes_be<uint32_t>(el["HFW_ArrayLenXXX"]);
-			concatVectorWithContainer(buffer, len);
-		} else if (el.find("HFW_classNameXXX") != el.end() &&
-		           el["HFW_classNameXXX"].is_string()) {
-			buffer.emplace_back(AMF0::TYPED_OBJECT_MARKER);
-			string className = el["HFW_classNameXXX"].get<string>();
-			AMF0::writeStringWithLenPrefixU16(buffer, className);
-		} else if (el.find("HFW_referenceXXX") != el.end()) {
-			buffer.emplace_back(AMF0::REFERENCE_MARKER);
-			array<uint8_t, 2> index = dectobytes_be<uint16_t>(el["HFW_referenceXXX"]);
-			concatVectorWithContainer(buffer, index);
-			return;
-		} else {
-			buffer.emplace_back(AMF0::OBJECT_MARKER);
+			double d = AMF0::readDouble(arr.data(), 0);
+			return make_shared<AMF0_NUMBER>(d);
 		}
 
-		for (auto &el2 : el.items()) {
-			if (el2.key() == "HFW_classNameXXX" || el2.key() == "HFW_ArrayLenXXX") {
-				continue;
+		auto arr = make_shared<AMF0_STRICT_ARRAY>();
+		for (auto el : j) {
+			arr->values.emplace_back(AMF0::from_json(el));
+		}
+		return arr;
+
+	} else if (j.is_object()) {
+
+		if (j.contains("__AMF0_OBJECT_CLASSNAME__")) {
+			auto obj = make_shared<AMF0_TYPED_OBJECT>();
+			for (auto& [key, value] : j.items()) {
+				if (key == "__AMF0_OBJECT_CLASSNAME__") {
+					obj->className = value.get<string>();
+				} else {
+					obj->keyValuePairs.emplace_back(key, AMF0::from_json(value));
+				}
 			}
-			AMF0::writeStringWithLenPrefixU16(buffer, el2.key());
-			parseJSONElement(buffer, el2.value());
+			return obj;
+		} else if (j.contains("__AMF0_ARRAY_ASSOCIATIVE_COUNT__")) {
+			auto obj = make_shared<AMF0_ECMA_ARRAY>();
+			for (auto& [key, value] : j.items()) {
+				if (key == "__AMF0_ARRAY_ASSOCIATIVE_COUNT__") {
+					obj->associativeCount = value.get<int>();
+				} else {
+					obj->keyValuePairs.emplace_back(key, AMF0::from_json(value));
+				}
+			}
+			return obj;
+		} else if (j.contains("__AMF0_REFERENCE__")) {
+			auto obj = make_shared<AMF0_REFERENCE>();
+			obj->index = static_cast<uint16_t>(j.at("__AMF0_REFERENCE__").get<int>());
+			return obj;
+		} else {
+			auto obj = make_shared<AMF0_OBJECT>();
+			for (auto& [key, value] : j.items()) {
+				obj->keyValuePairs.emplace_back(key, AMF0::from_json(value));
+			}
+			return obj;
 		}
 
-		array<uint8_t, 3> endObj = {0x00, 0x00, AMF0::OBJECT_END_MARKER};
-		concatVectorWithContainer(buffer, endObj);
-
-	} else if (el.is_string()) {
-		string s = el.get<string>();
-		if (s == "HFW_undefinedXXX") {
-			buffer.emplace_back(AMF0::UNDEFINED_MARKER);
-		} else {
-			buffer.emplace_back(AMF0::STRING_MARKER);
-			AMF0::writeStringWithLenPrefixU16(buffer, s);
-		}
-	} else if (el.is_array()) {
-		if (el.size() == 8) { // Non-finite number
-			buffer.emplace_back(AMF0::NUMBER_MARKER);
-			concatVectorWithContainer(buffer, el);
-		} else {
-			throw swf_exception("JSON Arrays only in use for non-finite numbers.");
-		}
 	} else {
 		throw swf_exception("Unrecognized JSON type.");
 	}
+
 }
 
 /**
@@ -344,8 +446,128 @@ array<uint8_t, 8> AMF0::writeDouble(double d) {
 	return dectobytes_be<uint64_t>(bit_cast<uint64_t>(d));
 }
 
-void AMF0::writeStringWithLenPrefixU16(std::vector<uint8_t> &data, const std::string &s) {
-	std::array<uint8_t, 2> len = dectobytes_be<uint16_t>(static_cast<uint16_t>(s.size()));
+uint16_t AMF0::readU16(const std::uint8_t* buffer, size_t &pos) {
+	uint16_t u = bytestodec_be<uint16_t>(buffer + pos);
+	pos += 2;
+	return u;
+}
+
+array<uint8_t, 2> AMF0::writeU16(uint16_t u) {
+	return dectobytes_be<uint16_t>(u);
+}
+
+uint32_t AMF0::readU32(const std::uint8_t* buffer, size_t &pos) {
+	uint32_t u = bytestodec_be<uint32_t>(buffer + pos);
+	pos += 4;
+	return u;
+}
+
+array<uint8_t, 4> AMF0::writeU32(uint32_t u) {
+	return dectobytes_be<uint32_t>(u);
+}
+
+
+string AMF0::decodeString(const std::uint8_t* buffer, size_t &pos) {
+	uint16_t len = bytestodec_be<uint16_t>(buffer + pos);
+	pos += 2;
+	string s{buffer + pos, buffer + pos + len};
+	pos += len;
+	return s;
+}
+
+vector<uint8_t> AMF0::encodeString(const std::string& s) {
+	vector<uint8_t> data;
+	array<uint8_t, 2> len = dectobytes_be<uint16_t>(static_cast<uint16_t>(s.size()));
 	concatVectorWithContainer(data, len);
 	concatVectorWithContainer(data, s);
+	return data;
+}
+
+
+// There is no need to compare two arrays or two objects.
+// There can be deep copies, so two arrays having the
+// same elements does not mean they are the same array object. Same for objects.
+bool AMF0_ECMA_ARRAY::operator==(const AMF0_ECMA_ARRAY& rhs) const {
+	return std::equal(this->keyValuePairs.begin(), this->keyValuePairs.end(),
+	                  rhs.keyValuePairs.begin(), rhs.keyValuePairs.end(),
+	                  [](auto& lhs, auto& rhs2) {
+		if (lhs.first != rhs2.first) { return false; }
+		if (lhs.second != rhs2.second) { return false; }
+		return true;
+	});
+}
+bool AMF0_STRICT_ARRAY::operator==(const AMF0_STRICT_ARRAY& rhs) const {
+	return std::equal(this->values.begin(), this->values.end(),
+	                  rhs.values.begin(), rhs.values.end(),
+	                  [](auto& lhs, auto& rhs2) {
+		if (lhs != rhs2) { return false; }
+		return true;
+	});
+}
+bool AMF0_OBJECT::operator==(const AMF0_OBJECT& rhs) const {
+	return std::equal(this->keyValuePairs.begin(), this->keyValuePairs.end(),
+	                  rhs.keyValuePairs.begin(), rhs.keyValuePairs.end(),
+	                  [](auto& lhs, auto& rhs2) {
+		if (lhs.first != rhs2.first) { return false; }
+		if (lhs.second != rhs2.second) { return false; }
+		return true;
+	});
+}
+bool AMF0_TYPED_OBJECT::operator==(const AMF0_TYPED_OBJECT& rhs) const {
+	if (this->className != rhs.className) {
+		return false;
+	}
+	return std::equal(this->keyValuePairs.begin(), this->keyValuePairs.end(),
+	                  rhs.keyValuePairs.begin(), rhs.keyValuePairs.end(),
+	                  [](auto& lhs, auto& rhs2) {
+		if (lhs.first != rhs2.first) { return false; }
+		if (lhs.second != rhs2.second) { return false; }
+		return true;
+	});
+}
+
+
+namespace swf {
+
+	bool operator==(const amf0type_sptr& lhs, const amf0type_sptr& rhs) {
+		if (lhs->type != rhs->type) { return false; }
+		if (lhs->type == AMF0::NUMBER_MARKER) {
+			auto valLhs = static_cast<AMF0_NUMBER *>(lhs.get());
+			auto valRhs = static_cast<AMF0_NUMBER *>(rhs.get());
+			return *valLhs == *valRhs;
+		} else if (lhs->type == AMF0::BOOLEAN_MARKER) {
+			auto valLhs = static_cast<AMF0_BOOLEAN *>(lhs.get());
+			auto valRhs = static_cast<AMF0_BOOLEAN *>(rhs.get());
+			return *valLhs == *valRhs;
+		} else if (lhs->type == AMF0::STRING_MARKER) {
+			auto valLhs = static_cast<AMF0_STRING *>(lhs.get());
+			auto valRhs = static_cast<AMF0_STRING *>(rhs.get());
+			return *valLhs == *valRhs;
+		} else if (lhs->type == AMF0::OBJECT_MARKER) {
+			auto valLhs = static_cast<AMF0_OBJECT *>(lhs.get());
+			auto valRhs = static_cast<AMF0_OBJECT *>(rhs.get());
+			return *valLhs == *valRhs;
+		} else if (lhs->type == AMF0::REFERENCE_MARKER) {
+			auto valLhs = static_cast<AMF0_REFERENCE *>(lhs.get());
+			auto valRhs = static_cast<AMF0_REFERENCE *>(rhs.get());
+			return *valLhs == *valRhs;
+		} else if (lhs->type == AMF0::ECMA_ARRAY_MARKER) {
+			auto valLhs = static_cast<AMF0_ECMA_ARRAY *>(lhs.get());
+			auto valRhs = static_cast<AMF0_ECMA_ARRAY *>(rhs.get());
+			return *valLhs == *valRhs;
+		} else if (lhs->type == AMF0::STRICT_ARRAY_MARKER) {
+			auto valLhs = static_cast<AMF0_STRICT_ARRAY *>(lhs.get());
+			auto valRhs = static_cast<AMF0_STRICT_ARRAY *>(rhs.get());
+			return *valLhs == *valRhs;
+		} else if (lhs->type == AMF0::TYPED_OBJECT_MARKER) {
+			auto valLhs = static_cast<AMF0_TYPED_OBJECT *>(lhs.get());
+			auto valRhs = static_cast<AMF0_TYPED_OBJECT *>(rhs.get());
+			return *valLhs == *valRhs;
+		} else {
+			std::stringstream stream;
+			stream << std::hex << std::setw(2) << std::setfill('0') << static_cast<int>(lhs->type);
+			throw swf_exception("Equal: Marker '0x" + stream.str() + "' not valid or not implemented.");
+		}
+	}
+
 }
