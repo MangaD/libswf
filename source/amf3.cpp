@@ -412,11 +412,12 @@ json AMF3::to_json(amf3type_sptr & type) {
 
 		if (!arr->associativeNameValues.empty()) {
 			json j1;
+			j1["AMF3_ARRAY_ASSOCIATIVE"] = nullptr;
 			for (auto& a : arr->associativeNameValues) {
 				json obj = this->to_json(a.second);
 				j1.emplace(*(a.first), obj);
 			}
-			j["AMF3_ARRAY_ASSOCIATIVE"] = j1;
+			j.emplace_back(j1);
 		}
 		if(!arr->denseValues.empty()) {
 			for (auto& a : arr->denseValues) {
