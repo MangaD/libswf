@@ -295,7 +295,11 @@ std::vector<uint8_t> AMF3::serialize(const amf3type_sptr & value) {
 			for (auto &amf3 : valA->denseValues) {
 				concatVectorWithContainer(vec, this->serialize(amf3));
 			}
-			objRefs.emplace_back(value);
+			// Empty arrays are not sent by reference. I don't know why but while debugging
+			// Hero Fighter Spt files (namely the 809 - Drew one) this was the case.
+			if (!(valA->denseValues.empty() && valA->associativeNameValues.empty())) {
+				objRefs.emplace_back(value);
+			}
 		}
 
 	} else if (value->type == AMF3::OBJECT_MARKER) {
@@ -553,6 +557,8 @@ json AMF3::to_json(amf3type_sptr & type) {
 	}
 	else if (type->type == AMF3::ARRAY_MARKER) {
 		auto arr = static_cast<AMF3_ARRAY *>(type.get());
+
+		j = json::array(); // important for empty arrays
 
 		if (!arr->associativeNameValues.empty()) {
 			json j1;
