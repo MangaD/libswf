@@ -9,24 +9,32 @@
 
 #include <string>
 #include <vector>
-#include <cstdint>
+#include <cstdint> // uint32_t...
 #include <functional> // std::reference_wrapper
-#include <memory> // std::unique_ptr, std::shared_ptr
+#include <memory> // std::shared_ptr, std::make_shared
 #include <utility> // std::pair
 
 #include <json.hpp>
 #include <fifo_map.hpp> // https://github.com/nlohmann/fifo_map/blob/master/src/fifo_map.hpp
 
-/**
- * https://github.com/nlohmann/json/issues/485#issuecomment-333652309
- * A workaround to give to use fifo_map as map, we are just ignoring the 'less' compare
- */
-template<class K, class V, class dummy_compare, class A>
-using my_workaround_fifo_map = nlohmann::fifo_map<K, V, nlohmann::fifo_map_compare<K>, A>;
-
-using string_sptr = std::shared_ptr<std::string>;
-
 namespace swf {
+
+	/**
+	 * For ordering the JSON elements in a FIFO manner, this is useful because:
+	 * 1. Easier to debug, just compare original decompressed file with new one.
+	 * 2. For ordering elements in ECMA arrays, as reading them out of order may not work out well.
+	 *
+	 * https://github.com/nlohmann/json/issues/485#issuecomment-333652309
+	 * A workaround to give to use fifo_map as map, we are just ignoring the 'less' compare
+	 */
+	template<class K, class V, class dummy_compare, class A>
+	using my_workaround_fifo_map = nlohmann::fifo_map<K, V, nlohmann::fifo_map_compare<K>, A>;
+	using json = nlohmann::basic_json<my_workaround_fifo_map>;
+
+	// For normal use, without ordering
+	//using json = nlohmann::json;
+
+	using string_sptr = std::shared_ptr<std::string>;
 
 	class AMF3_TYPE {
 	public:
@@ -148,18 +156,23 @@ namespace swf {
 			return vec;
 		}
 
-/*
+
 		inline std::string exportToJSON() {
-			return this->object.jsonObj.dump(4);
+			json j = this->to_json(this->object);
+			return j.dump(4);
 		}
-*/
+
 		amf3type_sptr object;
 
 	private:
 
 		/// Increases pos by the number of bytes read
 		amf3type_sptr parseAmf3(const uint8_t* buffer, size_t &pos);
-		//void amf3TypeToJSON(nlohmann::basic_json<my_workaround_fifo_map> &, const AMF3_TYPE &);
+
+		// AMF3_TYPE to_json and from_json - couldn't implement it this way for some reason
+		// https://nlohmann.github.io/json/features/arbitrary_types/
+		json to_json(amf3type_sptr &);
+		//amf3type_sptr from_json(const json& j);
 
 		/**
 		 * AMF3 Reference Tables
@@ -169,6 +182,8 @@ namespace swf {
 		std::vector<amf3trait_sptr> objTraitsRefs;
 		std::vector<amf3type_sptr> objRefs;
 	};
+
+	int u32Toi29(uint32_t u);
 
 } // swf
 

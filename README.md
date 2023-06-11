@@ -37,7 +37,7 @@ Documentation is generated using Doxygen (and doxywizard). Needs code review.
 
 ## Copyright
 
-Copyright (c) 2019-2020 David Gonçalves
+Copyright (c) 2018-2021 David Gonçalves
 
 ## License
 

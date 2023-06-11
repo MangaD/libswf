@@ -16,25 +16,7 @@
 #include <iomanip> // setw, setfill
 #include <bitset>
 #include <stdexcept> // out_of_range
-
-// TODO
-// AMF3_TYPE to_json and from_json
-// https://nlohmann.github.io/json/features/arbitrary_types/
-
-/**
- * For ordering the JSON elements in a FIFO manner, this is useful because:
- * 1. Easier to debug, just compare original decompressed file with new one.
- * 2. For ordering elements in ECMA arrays, as reading them out of order may not work out well.
- *
- * https://github.com/nlohmann/json/issues/485#issuecomment-333652309
- * A workaround to give to use fifo_map as map, we are just ignoring the 'less' compare
- */
-template<class K, class V, class dummy_compare, class A>
-using my_workaround_fifo_map = nlohmann::fifo_map<K, V, nlohmann::fifo_map_compare<K>, A>;
-using json = nlohmann::basic_json<my_workaround_fifo_map>;
-
-// For normal use, without ordering
-//using json = nlohmann::json;
+#include <cassert> // assert
 
 using namespace std;
 using namespace swf;
@@ -72,7 +54,7 @@ amf3type_sptr AMF3::parseAmf3(const uint8_t* buffer, size_t &pos) {
 
 		++pos;
 
-		obj->i = static_cast<int32_t>(AMF3::decodeU29(buffer, pos));
+		obj->i = u32Toi29(AMF3::decodeU29(buffer, pos));
 
 		return obj;
 	}
@@ -274,7 +256,6 @@ string_sptr AMF3::readString(const uint8_t* buffer, size_t &pos) {
 	u29 >>= 1;
 
 	if (isRef) {
-		SWF_DEBUG(*(stringRefs[u29]));
 		return stringRefs[u29];
 	}
 
@@ -282,7 +263,6 @@ string_sptr AMF3::readString(const uint8_t* buffer, size_t &pos) {
 		return make_shared<string>(""); // empty string is never sent by reference
 	} else {
 		auto s = make_shared<string>(buffer + pos, buffer + pos + u29);
-		SWF_DEBUG(*s);
 		pos += u29;
 		stringRefs.emplace_back(s);
 		return s;
@@ -385,95 +365,110 @@ uint8_t* AMF3::encodeBALength(uint8_t* r, uint32_t n) {
 	return AMF3::encodeU29(r, (n << 1) | 1);
 }
 
+json AMF3::to_json(amf3type_sptr & type) {
 
-/*
-void AMF3::amf3TypeToJSON(json &j, const AMF3_TYPE &type) {
+	json j;
 
-	if (type.type == AMF3::UNDEFINED_MARKER) {
+	if (type->type == AMF3::UNDEFINED_MARKER) {
 		j = "AMF3_UNDEFINED";
 	}
-	else if (type.type == AMF3::NULL_MARKER) {
+	else if (type->type == AMF3::NULL_MARKER) {
 		j = nullptr;
 	}
-	else if (type.type == AMF3::FALSE_MARKER) {
+	else if (type->type == AMF3::FALSE_MARKER) {
 		j = false;
 	}
-	else if (type.type == AMF3::TRUE_MARKER) {
+	else if (type->type == AMF3::TRUE_MARKER) {
 		j = true;
 	}
-	else if (type.type == AMF3::INTEGER_MARKER) {
-		j = type.u29;
+	else if (type->type == AMF3::INTEGER_MARKER) {
+		auto i = static_cast<AMF3_INTEGER *>(type.get());
+		j = i->i;
 	}
-	else if (type.type == AMF3::DOUBLE_MARKER) {
+	else if (type->type == AMF3::DOUBLE_MARKER) {
+		auto d = static_cast<AMF3_DOUBLE *>(type.get());
 		// NaN can have many different representations, and
 		// infinite can have 2 representations (positive and negative),
 		// so we store an array of bytes for them to keep their
 		// exact representation.
-		if(isfinite(type.d)) {
-			j = type.d;
+		if(isfinite(d->d)) {
+			j = d->d;
 		} else {
 			json j2;
 			j2.emplace_back("AMF3_DOUBLE_NAN");
-			auto arr = AMF0::writeDouble(type.d);
+			auto arr = AMF0::writeDouble(d->d);
 			for (size_t i = 0; i < 8; ++i) {
 				j2.emplace_back(arr[i]);
 			}
 			j = j2;
 		}
 	}
-	else if (type.type == AMF3::STRING_MARKER) {
-		if (type.isReference) {
-			json j2;
-			j2.emplace("AMF3_STRING_REF", type.u29);
-			j = j2;
-		} else {
-			j = type.s;
-		}
+	else if (type->type == AMF3::STRING_MARKER) {
+		auto s = static_cast<AMF3_STRING *>(type.get());
+		j = *(s->s);
 	}
-	else if (type.type == AMF3::ARRAY_MARKER) {
-		if (type.isReference) {
-			json j2;
-			j2.emplace("AMF3_ARRAY_REFERENCE", type.u29);
-			j = j2;
-		} else {
-			if (!type.jsonObj.empty()) {
-				json j2;
-				j2.emplace("AMF3_ASSOCIATIVE_ARRAY", type.jsonObj);
-				j = j2;
-			}
-			if(!type.amf3Array.empty()) {
-				json j2;
-				j2.emplace("AMF3_DENSE_ARRAY", type.u29);
-				for (size_t i = 0; i < type.amf3Array.size(); ++i) {
-					this->amf3TypeToJSON(j2[to_string(i)], type.amf3Array[i]);
-				}
-				j = j2;
-			}
-		}
-	}
-	else if (type.type == AMF3::OBJECT_MARKER) {
+	else if (type->type == AMF3::ARRAY_MARKER) {
+		auto arr = static_cast<AMF3_ARRAY *>(type.get());
 
-		if (type.isReference) {
-			json j2;
-			j2.emplace("AMF3_OBJECT_REFERENCE", type.u29);
-			j = j2;
-		} else if (type.isTraitRef) {
-			json j2;
-			j2.emplace("AMF3_TRAITS_REF", type.u29);
-			j = j2;
-		} else if (type.isTraitExt) {
-			throw swf_exception("AMF3 Object traits ext not implemented because it is program dependent.");
-		} else {
-			j = type.jsonObj;
-			if (type.isDynamic) {
-				j["AMF3_OBJECT_DYNAMIC"] = "";
+		if (!arr->associativeNameValues.empty()) {
+			json j1;
+			for (auto& a : arr->associativeNameValues) {
+				json obj = this->to_json(a.second);
+				j1.emplace(*(a.first), obj);
+			}
+			j["AMF3_ARRAY_ASSOCIATIVE"] = j1;
+		}
+		if(!arr->denseValues.empty()) {
+			for (auto& a : arr->denseValues) {
+				json obj = this->to_json(a);
+				j.emplace_back(obj);
 			}
 		}
+	}
+	else if (type->type == AMF3::OBJECT_MARKER) {
+		auto obj = static_cast<AMF3_OBJECT *>(type.get());
+
+		json j1;
+
+		if(!obj->sealedValues.empty()) {
+
+			for (size_t i = 0; i < obj->sealedValues.size(); ++i) {
+				json obj2 = this->to_json(obj->sealedValues[i]);
+				j1.emplace(*(obj->trait->memberNames[i]), obj2);
+			}
+		}
+		if (!obj->dynamicNameValues.empty()) {
+			json j2;
+			for (auto& a : obj->dynamicNameValues) {
+				json obj2 = this->to_json(a.second);
+				j2.emplace(*(a.first), obj2);
+			}
+			j1["AMF3_OBJECT_DYNAMIC"] = j2;
+		}
+
+		j[*(obj->trait->className)] = j1;
 	}
 	else {
 		stringstream stream;
-		stream << hex << setw(2) << setfill('0') << static_cast<int>(type.type);
-		throw swf_exception("Type '0x" + stream.str() + "' not valid or not implemented in JSON.");
+		stream << hex << setw(2) << setfill('0') << static_cast<int>(type->type);
+		throw swf_exception("Type '0x" + stream.str() + "' not implemented in JSON.");
 	}
+
+	return j;
+}
+/*
+ * NOTE TO SELF: When serializing, must keep reference tables in mind!
+amf3type_sptr AMF3::from_json(const json& j) {
+	j.at("name").get_to(p.name);
+	j.at("address").get_to(p.address);
+	j.at("age").get_to(p.age);
 }
 */
+
+namespace swf {
+
+	int32_t u32Toi29(uint32_t u) {
+		assert(u < 0x20000000); // this should never happen, unless the program is tampered with
+		return static_cast<std::int32_t>(u << 3) >> 3;
+	}
+}

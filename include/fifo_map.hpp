@@ -545,3 +545,4 @@ inline void swap(nlohmann::fifo_map<Key, T, Compare, Allocator>& m1,
 }
 
 #endif
+

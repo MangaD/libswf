@@ -1,6 +1,6 @@
 # Reference: https://git.mel.vin/template/c/commit/584b866fe79411b3f361e79fe0c0d68a3b278b9e
 
-image: ubuntu:18.04
+image: ubuntu:20.04
 
 stages:
   - build

@@ -98,7 +98,6 @@ void subBitset(const std::bitset<bigBs> &bs, std::bitset<smallBs> &sub, int star
 }
 void subBitset(const swf_utils::dynamic_bitset &bs, swf_utils::dynamic_bitset &sub, int start_pos);
 
-
 /**
  * Bytes to decimal in little-endian
  * https://stackoverflow.com/questions/12240299/convert-bytes-to-int-uint-in-c
