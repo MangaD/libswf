@@ -55,7 +55,7 @@ namespace zlib {
 	 * zlib C tutorial: http://zlib.net/zlib_how.html
 	 * StackOverflow C++ tutorial: https://stackoverflow.com/questions/4538586/how-to-compress-a-buffer-with-zlib
 	 */
-	vector<uint8_t> zlib_compress(const vector<uint8_t> &in_data, const int level)
+	vector<uint8_t> zlib_compress(const uint8_t* in_data, const size_t in_data_size, const int level)
 	{
 		vector<uint8_t> out_data;
 
@@ -67,8 +67,8 @@ namespace zlib {
 		strm->zalloc = nullptr;
 		strm->zfree = nullptr;
 		strm->opaque = nullptr;
-		strm->next_in = in_data.data(); // Can be const if #define ZLIB_CONST
-		strm->avail_in = static_cast<uInt>(in_data.size());
+		strm->next_in = in_data; // Can be const if #define ZLIB_CONST
+		strm->avail_in = static_cast<uInt>(in_data_size);
 		strm->next_out = temp_buffer;
 		strm->avail_out = BUFSIZE;
 
