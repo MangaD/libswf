@@ -24,6 +24,8 @@
 template<class K, class V, class dummy_compare, class A>
 using my_workaround_fifo_map = nlohmann::fifo_map<K, V, nlohmann::fifo_map_compare<K>, A>;
 
+using string_sptr = std::shared_ptr<std::string>;
+
 namespace swf {
 
 	class AMF3_TYPE {
@@ -31,6 +33,8 @@ namespace swf {
 		explicit inline AMF3_TYPE () : type(0) {}
 		uint8_t type; // U8 marker
 	};
+
+	using amf3type_sptr = std::shared_ptr<AMF3_TYPE>;
 
 	class AMF3_INTEGER : public AMF3_TYPE {
 	public:
@@ -52,65 +56,52 @@ namespace swf {
 
 	class AMF3_STRING : public AMF3_TYPE {
 	public:
-		explicit inline AMF3_STRING () : u29(0), s(), isReference(false) {}
+		explicit inline AMF3_STRING () : s() {}
 		/**
 		 * See section 3.8 of amf3-file-format-spec.pdf
 		*/
-		uint32_t u29; // string reference or byte length of utf8 string
-		std::string s;
-		bool isReference;
+		string_sptr s;
 	};
 
 	class AMF3_ARRAY : public AMF3_TYPE {
 	public:
-		explicit inline AMF3_ARRAY () : u29(0), isReference(false),
-			associativeNameValues(), denseValues() {}
+		explicit inline AMF3_ARRAY () : associativeNameValues(), denseValues() {}
 		/**
 		 * See section 3.11 of amf3-file-format-spec.pdf
 		*/
-		uint32_t u29; // count of the dense portion or reference index
-		bool isReference;
-		std::vector<std::pair <std::unique_ptr<AMF3_STRING>, std::shared_ptr<AMF3_TYPE>>> associativeNameValues;
-		std::vector<std::shared_ptr<AMF3_TYPE>> denseValues;
+		std::vector<std::pair <string_sptr, amf3type_sptr>> associativeNameValues;
+		std::vector<amf3type_sptr> denseValues;
 	};
 
 	class AMF3_TRAIT {
 	public:
 		explicit inline AMF3_TRAIT() : className(), isDynamic(false), memberNames() {}
-		std::string className;
+		string_sptr className;
 		bool isDynamic;
-		std::vector<std::string> memberNames;
+		std::vector<string_sptr> memberNames;
 	};
+
+	using amf3trait_sptr = std::shared_ptr<AMF3_TRAIT>;
 
 	class AMF3_OBJECT : public AMF3_TYPE {
 	public:
-		explicit inline AMF3_OBJECT () : u29(0), isTraitRef(false),
-			isTraitExt(false), isReference(false), trait(),
+		explicit inline AMF3_OBJECT () : trait(),
 			dynamicNameValues(), sealedValues() {}
 		/**
 		 * See section 3.11 of amf3-file-format-spec.pdf
 		*/
-		uint32_t u29; // object reference, trait reference or number of sealed
-		              // traits member names that follow after the class name (an integer)
-		bool isTraitRef;
-		bool isTraitExt;
-		bool isReference;
-		std::shared_ptr<AMF3_TRAIT> trait;
-		std::vector<std::pair <std::unique_ptr<AMF3_STRING>, std::shared_ptr<AMF3_TYPE>>> dynamicNameValues;
-		std::vector<std::shared_ptr<AMF3_TYPE>> sealedValues;
+		amf3trait_sptr trait;
+		std::vector<std::pair <string_sptr, amf3type_sptr>> dynamicNameValues;
+		std::vector<amf3type_sptr> sealedValues;
 	};
 
 	class AMF3_BYTEARRAY : public AMF3_TYPE {
 	public:
-		explicit inline AMF3_BYTEARRAY () : u29(0), u29_length(0),
-			binaryData(), isReference(false) {}
+		explicit inline AMF3_BYTEARRAY () : binaryData() {}
 		/**
 		 * See section 3.14 of amf3-file-format-spec.pdf
 		*/
-		uint32_t u29; // reference index or byte length
-		size_t u29_length; // How many bytes the u29 byteLength is represented in.
 		std::vector<uint8_t> binaryData;
-		bool isReference;
 	};
 
 	class AMF3 {
@@ -139,18 +130,16 @@ namespace swf {
 		static constexpr uint8_t VECTOR_OBJECT_MARKER = 0x10;
 		static constexpr uint8_t DICTIONARY_MARKER = 0x11;
 
-		explicit AMF3(const uint8_t* buffer);
+		explicit AMF3(const uint8_t* buffer, size_t &pos);
 
-		// Increases pos by the number of bytes it takes to encode this U29.
+		/// Increases pos by the number of bytes it takes to encode this U29.
 		static uint32_t decodeU29(const uint8_t* buffer, size_t &pos);
 		static uint8_t* encodeU29(uint8_t* r, uint32_t n);
 
 		static uint8_t* encodeBALength(uint8_t* r, uint32_t n);
 
 		/// Increases pos by string length.
-		std::string readString(const uint8_t* buffer, size_t &pos, bool &isStrRef, uint32_t &strLen);
-		/// Same as readString, but throws exception if the string is a reference
-		std::string readObjectKey(const uint8_t* buffer, size_t &pos);
+		string_sptr readString(const uint8_t* buffer, size_t &pos);
 
 		template <typename T> static std::vector<uint8_t> U29BAToVector(T n) {
 			std::vector<uint8_t> vec;
@@ -164,20 +153,21 @@ namespace swf {
 			return this->object.jsonObj.dump(4);
 		}
 */
-		std::shared_ptr<AMF3_TYPE> object;
+		amf3type_sptr object;
 
 	private:
 
-		std::shared_ptr<AMF3_TYPE> parseAmf3(const uint8_t* buffer, size_t &pos);
+		/// Increases pos by the number of bytes read
+		amf3type_sptr parseAmf3(const uint8_t* buffer, size_t &pos);
 		//void amf3TypeToJSON(nlohmann::basic_json<my_workaround_fifo_map> &, const AMF3_TYPE &);
 
 		/**
 		 * AMF3 Reference Tables
 		 * See section 2.2 of amf3-file-format-spec.pdf
 		 */
-		std::vector<std::string> stringRefs;
-		std::vector<std::shared_ptr<AMF3_TRAIT>> objTraitsRefs;
-		std::vector<std::shared_ptr<AMF3_TYPE>> objRefs;
+		std::vector<string_sptr> stringRefs;
+		std::vector<amf3trait_sptr> objTraitsRefs;
+		std::vector<amf3type_sptr> objRefs;
 	};
 
 } // swf

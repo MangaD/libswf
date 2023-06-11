@@ -15,7 +15,7 @@
 #include <iostream> // hex
 #include <iomanip> // setw, setfill
 #include <bitset>
-#include <stdexcept> // std::out_of_range
+#include <stdexcept> // out_of_range
 
 // TODO
 // AMF3_TYPE to_json and from_json
@@ -39,15 +39,14 @@ using json = nlohmann::basic_json<my_workaround_fifo_map>;
 using namespace std;
 using namespace swf;
 
-AMF3::AMF3(const uint8_t* buffer) : object(), stringRefs(),
+AMF3::AMF3(const uint8_t* buffer, size_t &pos) : object(), stringRefs(),
 			objTraitsRefs(), objRefs() {
 
-	size_t pos = 0;
 	this->object = parseAmf3(buffer, pos);
 }
 
 
-std::shared_ptr<AMF3_TYPE> AMF3::parseAmf3(const uint8_t* buffer, size_t &pos) {
+amf3type_sptr AMF3::parseAmf3(const uint8_t* buffer, size_t &pos) {
 
 	/**
 	 * Section 3.2, 3.3, 3.4, 3.5 of amf3-file-format-spec.pdf
@@ -57,7 +56,7 @@ std::shared_ptr<AMF3_TYPE> AMF3::parseAmf3(const uint8_t* buffer, size_t &pos) {
 	    buffer[pos] == AMF3::FALSE_MARKER ||
 	    buffer[pos] == AMF3::TRUE_MARKER) {
 
-		auto obj = std::make_shared<AMF3_TYPE>();
+		auto obj = make_shared<AMF3_TYPE>();
 		obj->type = buffer[pos];
 
 		++pos;
@@ -68,7 +67,7 @@ std::shared_ptr<AMF3_TYPE> AMF3::parseAmf3(const uint8_t* buffer, size_t &pos) {
 	 */
 	else if (buffer[pos] == AMF3::INTEGER_MARKER) {
 
-		auto obj = std::make_shared<AMF3_INTEGER>();
+		auto obj = make_shared<AMF3_INTEGER>();
 		obj->type = buffer[pos];
 
 		++pos;
@@ -82,7 +81,7 @@ std::shared_ptr<AMF3_TYPE> AMF3::parseAmf3(const uint8_t* buffer, size_t &pos) {
 	 */
 	else if (buffer[pos] == AMF3::DOUBLE_MARKER) {
 
-		auto obj = std::make_shared<AMF3_DOUBLE>();
+		auto obj = make_shared<AMF3_DOUBLE>();
 		obj->type = buffer[pos];
 
 		++pos;
@@ -96,15 +95,12 @@ std::shared_ptr<AMF3_TYPE> AMF3::parseAmf3(const uint8_t* buffer, size_t &pos) {
 	 */
 	else if (buffer[pos] == AMF3::STRING_MARKER) {
 
-		auto obj = std::make_shared<AMF3_STRING>();
+		auto obj = make_shared<AMF3_STRING>();
 		obj->type = buffer[pos];
 
 		++pos;
 
-		string str = AMF3::readString(buffer, pos, obj->isReference, obj->u29);
-		if (!obj->isReference) {
-			obj->s = str;
-		}
+		obj->s = AMF3::readString(buffer, pos);
 
 		return obj;
 	}
@@ -113,51 +109,51 @@ std::shared_ptr<AMF3_TYPE> AMF3::parseAmf3(const uint8_t* buffer, size_t &pos) {
 	 */
 	else if (buffer[pos] == AMF3::ARRAY_MARKER) {
 
-		auto obj = std::make_shared<AMF3_ARRAY>();
+		auto obj = make_shared<AMF3_ARRAY>();
 		obj->type = buffer[pos];
 
 		++pos;
 
-		obj->u29 = decodeU29(buffer, pos);
-		obj->isReference = !(obj->u29 & 0x1);
-		obj->u29 >>= 1;
+		uint32_t u29 = decodeU29(buffer, pos); // count of the dense portion or reference index
+		bool isRef = !(u29 & 0x1);
+		u29 >>= 1;
 
-		if (!obj->isReference) {
-			obj->denseValues.reserve(obj->u29); // count of dense portion
-
-			/**
-			 * AMF considers Arrays in two parts, the dense portion and the associative portion. The
-			 * binary representation of the associative portion consists of name/value pairs (potentially
-			 * none) terminated by an empty string. The binary representation of the dense portion is the
-			 * size of the dense portion (potentially zero) followed by an ordered list of values
-			 * (potentially none). The order these are written in AMF is first the size of the dense
-			 * portion, an empty string terminated list of name/value pairs, followed by size values.
-			 */
-
-			// If the first key is not an empty string - this is the associative
-			// portion.  Read keys and values from the array until
-			// we get to an empty string key
-			while (true) {
-				auto keyObj = std::make_unique<AMF3_STRING>();
-				keyObj->type = AMF3::STRING_MARKER;
-				string key = AMF3::readString(buffer, pos, keyObj->isReference, keyObj->u29);
-
-				if (!key.empty()) {
-					auto value = this->parseAmf3(buffer, pos);
-					obj->associativeNameValues.emplace_back(std::move(keyObj), std::move(value));
-				} else {
-					break;
-				}
-			}
-
-			// This is the dense portion
-			for (uint32_t i = 0; i < obj->u29; i++) {
-				obj->denseValues.emplace_back(this->parseAmf3(buffer, pos));
-			}
-
-			// Add to reference table
-			objRefs.emplace_back(obj);
+		if (isRef) {
+			return objRefs[u29];
 		}
+
+		obj->denseValues.reserve(u29); // count of dense portion
+
+		/**
+		 * AMF considers Arrays in two parts, the dense portion and the associative portion. The
+		 * binary representation of the associative portion consists of name/value pairs (potentially
+		 * none) terminated by an empty string. The binary representation of the dense portion is the
+		 * size of the dense portion (potentially zero) followed by an ordered list of values
+		 * (potentially none). The order these are written in AMF is first the size of the dense
+		 * portion, an empty string terminated list of name/value pairs, followed by size values.
+		 */
+
+		// If the first key is not an empty string - this is the associative
+		// portion.  Read keys and values from the array until
+		// we get to an empty string key
+		while (true) {
+			auto key = AMF3::readString(buffer, pos);
+
+			if (!key->empty()) {
+				auto value = this->parseAmf3(buffer, pos);
+				obj->associativeNameValues.emplace_back(key, move(value));
+			} else {
+				break;
+			}
+		}
+
+		// This is the dense portion
+		for (uint32_t i = 0; i < u29; i++) {
+			obj->denseValues.emplace_back(this->parseAmf3(buffer, pos));
+		}
+
+		// Add to reference table
+		objRefs.emplace_back(obj);
 
 		return obj;
 	}
@@ -166,42 +162,44 @@ std::shared_ptr<AMF3_TYPE> AMF3::parseAmf3(const uint8_t* buffer, size_t &pos) {
 	 */
 	else if (buffer[pos] == AMF3::OBJECT_MARKER) {
 
-		auto obj = std::make_shared<AMF3_OBJECT>();
+		auto obj = make_shared<AMF3_OBJECT>();
 		obj->type = buffer[pos];
 
 		++pos;
 
-		obj->u29 = decodeU29(buffer, pos);
+		// object reference, trait reference or number of sealed
+		// traits member names that follow after the class name (an integer)
+		uint32_t u29 = decodeU29(buffer, pos);
 
-		obj->isReference = !(obj->u29 & 0x1);
-		obj->u29 >>= 1;
+		bool isRef = !(u29 & 0x1);
+		u29 >>= 1;
 
-		if (obj->isReference) {
-			return obj;
+		if (isRef) {
+			return objRefs[u29];
 		}
 
-		obj->isTraitRef = !(obj->u29 & 0x1);
-		obj->u29 >>= 1;
+		bool isTraitRef = !(u29 & 0x1);
+		u29 >>= 1;
 
-		if (obj->isTraitRef) {
-			obj->trait = objTraitsRefs[obj->u29];
+		if (isTraitRef) {
+			obj->trait = objTraitsRefs[u29];
 		} else {
-			obj->isTraitExt = obj->u29 & 0x1;
-			obj->u29 >>= 1;
+			bool isTraitExt = u29 & 0x1;
+			u29 >>= 1;
 
-			if (obj->isTraitExt) {
+			if (isTraitExt) {
 				throw swf_exception("AMF3 Object traits ext not implemented because it is program dependent.");
 			}
 
-			auto trait = std::make_shared<AMF3_TRAIT>();
+			auto trait = make_shared<AMF3_TRAIT>();
 
-			trait->isDynamic = obj->u29 & 0x1;
-			obj->u29 >>= 1; // number of sealed traits member names that follow after the class name
+			trait->isDynamic = u29 & 0x1;
+			u29 >>= 1; // number of sealed traits member names that follow after the class name
 
-			trait->className = AMF3::readObjectKey(buffer, pos);
+			trait->className = AMF3::readString(buffer, pos);
 
-			for(uint32_t i = 0; i < obj->u29; i++) {
-				trait->memberNames.emplace_back(AMF3::readObjectKey(buffer, pos));
+			for(uint32_t i = 0; i < u29; i++) {
+				trait->memberNames.emplace_back(AMF3::readString(buffer, pos));
 			}
 
 			obj->trait = trait;
@@ -220,13 +218,11 @@ std::shared_ptr<AMF3_TYPE> AMF3::parseAmf3(const uint8_t* buffer, size_t &pos) {
 			// encounter an empty string key signifying the end of the
 			// dynamic members.
 			while (true) {
-				auto keyObj = std::make_unique<AMF3_STRING>();
-				keyObj->type = AMF3::STRING_MARKER;
-				string key = AMF3::readString(buffer, pos, keyObj->isReference, keyObj->u29);
+				auto key = AMF3::readString(buffer, pos);
 
-				if (!key.empty()) {
+				if (!key->empty()) {
 					auto value = this->parseAmf3(buffer, pos);
-					obj->dynamicNameValues.emplace_back(std::move(keyObj), std::move(value));
+					obj->dynamicNameValues.emplace_back(key, move(value));
 				} else {
 					break;
 				}
@@ -243,25 +239,24 @@ std::shared_ptr<AMF3_TYPE> AMF3::parseAmf3(const uint8_t* buffer, size_t &pos) {
 	 */
 	else if (buffer[pos] == AMF3::BYTE_ARRAY_MARKER) {
 
-		auto obj = std::make_shared<AMF3_BYTEARRAY>();
+		auto obj = make_shared<AMF3_BYTEARRAY>();
 		obj->type = buffer[pos];
 
 		++pos;
 
-		obj->u29_length = pos;
+		uint32_t u29 = decodeU29(buffer, pos); // reference index or byte length
+		bool isRef = !(u29 & 0x1);
+		u29 >>= 1;
 
-		obj->u29 = decodeU29(buffer, pos);
-		obj->isReference = !(obj->u29 & 0x1);
-		obj->u29 >>= 1;
-
-		obj->u29_length = pos - obj->u29_length;
-
-		if (!obj->isReference) {
-			obj->binaryData = { buffer + pos, buffer + pos + obj->u29 };
-
-			// Add to reference table
-			objRefs.emplace_back(obj);
+		if (isRef) {
+			return objRefs[u29];
 		}
+
+		obj->binaryData = { buffer + pos, buffer + pos + u29 };
+		pos += u29;
+
+		// Add to reference table
+		objRefs.emplace_back(obj);
 
 		return obj;
 	}
@@ -273,37 +268,26 @@ std::shared_ptr<AMF3_TYPE> AMF3::parseAmf3(const uint8_t* buffer, size_t &pos) {
 	}
 }
 
-std::string AMF3::readObjectKey(const uint8_t* buffer, size_t &pos) {
-	bool isStrRef;
-	uint32_t index;
-	string key = AMF3::readString(buffer, pos, isStrRef, index);
-	if (isStrRef) {
-		throw swf_exception("String reference as object key not implemented.");
+string_sptr AMF3::readString(const uint8_t* buffer, size_t &pos) {
+	uint32_t u29 = decodeU29(buffer, pos); // reference index or string length
+	bool isRef = !(u29 & 0x1);
+	u29 >>= 1;
+
+	if (isRef) {
+		SWF_DEBUG(*(stringRefs[u29]));
+		return stringRefs[u29];
 	}
-	return key;
-}
 
-std::string AMF3::readString(const uint8_t* buffer, size_t &pos, bool &isStrRef, uint32_t &strLen) {
-	uint32_t header = decodeU29(buffer, pos);
-	strLen = header >> 1;
-	string s;
-	if (header & 0x1) {
-		isStrRef = false;
-
-		if (strLen == 0) {
-			s = "";
-		} else {
-			s = {buffer + pos, buffer + pos + strLen};
-			stringRefs.emplace_back(s);
-		}
-
-		pos += strLen;
+	if (u29 == 0) {
+		return make_shared<string>(""); // empty string is never sent by reference
 	} else {
-		isStrRef = true;
-		s = stringRefs[strLen];
+		auto s = make_shared<string>(buffer + pos, buffer + pos + u29);
+		SWF_DEBUG(*s);
+		pos += u29;
+		stringRefs.emplace_back(s);
+		return s;
 	}
-	SWF_DEBUG(s);
-	return s;
+
 }
 
 /**
@@ -487,8 +471,8 @@ void AMF3::amf3TypeToJSON(json &j, const AMF3_TYPE &type) {
 		}
 	}
 	else {
-		std::stringstream stream;
-		stream << std::hex << setw(2) << setfill('0') << static_cast<int>(type.type);
+		stringstream stream;
+		stream << hex << setw(2) << setfill('0') << static_cast<int>(type.type);
 		throw swf_exception("Type '0x" + stream.str() + "' not valid or not implemented in JSON.");
 	}
 }
