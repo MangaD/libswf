@@ -1,0 +1,54 @@
+# Reference: https://git.mel.vin/template/c/commit/584b866fe79411b3f361e79fe0c0d68a3b278b9e
+
+image: ubuntu:18.04
+
+stages:
+  - build
+  - test
+
+cache:
+  paths:
+  - apt-cache/
+
+variables:
+  # https://askubuntu.com/questions/909277/avoiding-user-interaction-with-tzdata-when-installing-certbot-in-a-docker-contai
+  DEBIAN_FRONTEND: "noninteractive"
+
+build:
+  stage: build
+  before_script:
+    - apt update -qq && apt -o dir::cache::archives="apt-cache" install -y build-essential g++ g++-multilib zlib1g-dev cmake git gcovr ggcov lcov
+    - git submodule sync --recursive
+    - git submodule update --init --recursive
+  script:
+    - make debug -j8
+  artifacts:
+    paths:
+    - bin/debug/libswf.a
+    - bin/debug/libswf_test
+    - build/*.gcno
+    # depending on your build setup it's most likely a good idea to cache outputs to reduce the build time
+  cache:
+    paths:
+    - build/*.o
+
+# run tests using the binary built before
+test:
+  stage: test
+  # dependencies use only the artifacts from the specified stage
+  dependencies:
+    - build
+  before_script:
+    - apt update -qq && apt -o dir::cache::archives="apt-cache" install -y build-essential g++ g++-multilib zlib1g-dev cmake git gcovr ggcov lcov
+  script:
+    - ./bin/debug/libswf_test
+    - gcov source/*.cpp
+    - lcov --base-directory . --directory build/ --capture --output-file coverage.info
+    - lcov --list coverage.info
+  artifacts:
+    paths:
+    - coverage.info
+  # Coverage badge
+  coverage:
+    '/Total:\|(\d+\.?\d+\%)/'
+

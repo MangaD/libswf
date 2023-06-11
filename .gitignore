@@ -1,0 +1,13 @@
+documentation/doxygen
+bin
+build
+coverage
+coverage.info
+*.gcov
+*.o
+libraries/*.o
+libraries/lodepng/lodepng/*.o
+resources/*.o
+resources/*.aps
+.fuse_hidden*
+*~
