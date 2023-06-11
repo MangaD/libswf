@@ -11,6 +11,8 @@
 #include <vector>
 #include <cstdint>
 #include <functional> // std::reference_wrapper
+#include <memory> // std::unique_ptr, std::shared_ptr
+#include <utility> // std::pair
 
 #include <json.hpp>
 #include <fifo_map.hpp> // https://github.com/nlohmann/fifo_map/blob/master/src/fifo_map.hpp
@@ -26,24 +28,51 @@ namespace swf {
 
 	class AMF3_TYPE {
 	public:
-		explicit inline AMF3_TYPE () : type(0), u29(0), u29_length(0), isReference(false), isTraitRef(false),
-			isTraitExt(false), isDynamic(false), d(0), s(), binaryData(), amf3Array(), jsonObj() {}
+		explicit inline AMF3_TYPE () : type(0) {}
 		uint8_t type; // U8 marker
-		uint32_t u29; // length, index, whatever
-		/// How many bytes the u29 is represented in.
-		size_t u29_length;
-		bool isReference;
-		bool isTraitRef;
-		bool isTraitExt;
-		bool isDynamic;
-		double d;
-		std::string s;
-		std::vector<uint8_t> binaryData;
-		std::vector<AMF3_TYPE> amf3Array;
-		nlohmann::basic_json<my_workaround_fifo_map> jsonObj;
 	};
 
-	//class AMF3_UNDEFINED
+	class AMF3_INTEGER : public AMF3_TYPE {
+	public:
+		explicit inline AMF3_INTEGER () : i(0) {}
+		/**
+		 * See section 3.6 of amf3-file-format-spec.pdf
+		*/
+		int32_t i;
+	};
+
+	class AMF3_DOUBLE : public AMF3_TYPE {
+	public:
+		explicit inline AMF3_DOUBLE () : d(0) {}
+		/**
+		 * See section 3.7 of amf3-file-format-spec.pdf
+		*/
+		double d;
+	};
+
+	class AMF3_STRING : public AMF3_TYPE {
+	public:
+		explicit inline AMF3_STRING () : u29(0), s(), isReference(false) {}
+		/**
+		 * See section 3.8 of amf3-file-format-spec.pdf
+		*/
+		uint32_t u29; // string reference or byte length of utf8 string
+		std::string s;
+		bool isReference;
+	};
+
+	class AMF3_ARRAY : public AMF3_TYPE {
+	public:
+		explicit inline AMF3_ARRAY () : u29(0), isReference(false),
+			associativeNameValues(), denseValues() {}
+		/**
+		 * See section 3.11 of amf3-file-format-spec.pdf
+		*/
+		uint32_t u29; // count of the dense portion or reference index
+		bool isReference;
+		std::vector<std::pair <std::unique_ptr<AMF3_STRING>, std::shared_ptr<AMF3_TYPE>>> associativeNameValues;
+		std::vector<std::shared_ptr<AMF3_TYPE>> denseValues;
+	};
 
 	class AMF3_TRAIT {
 	public:
@@ -51,6 +80,37 @@ namespace swf {
 		std::string className;
 		bool isDynamic;
 		std::vector<std::string> memberNames;
+	};
+
+	class AMF3_OBJECT : public AMF3_TYPE {
+	public:
+		explicit inline AMF3_OBJECT () : u29(0), isTraitRef(false),
+			isTraitExt(false), isReference(false), trait(),
+			dynamicNameValues(), sealedValues() {}
+		/**
+		 * See section 3.11 of amf3-file-format-spec.pdf
+		*/
+		uint32_t u29; // object reference, trait reference or number of sealed
+		              // traits member names that follow after the class name (an integer)
+		bool isTraitRef;
+		bool isTraitExt;
+		bool isReference;
+		std::shared_ptr<AMF3_TRAIT> trait;
+		std::vector<std::pair <std::unique_ptr<AMF3_STRING>, std::shared_ptr<AMF3_TYPE>>> dynamicNameValues;
+		std::vector<std::shared_ptr<AMF3_TYPE>> sealedValues;
+	};
+
+	class AMF3_BYTEARRAY : public AMF3_TYPE {
+	public:
+		explicit inline AMF3_BYTEARRAY () : u29(0), u29_length(0),
+			binaryData(), isReference(false) {}
+		/**
+		 * See section 3.14 of amf3-file-format-spec.pdf
+		*/
+		uint32_t u29; // reference index or byte length
+		size_t u29_length; // How many bytes the u29 byteLength is represented in.
+		std::vector<uint8_t> binaryData;
+		bool isReference;
 	};
 
 	class AMF3 {
@@ -83,9 +143,8 @@ namespace swf {
 
 		// Increases pos by the number of bytes it takes to encode this U29.
 		static uint32_t decodeU29(const uint8_t* buffer, size_t &pos);
-		// Increases pos by the number of bytes it takes to encode this U29.
-		static uint32_t decodeBALength(const uint8_t* buffer, size_t &pos, bool &isRef);
 		static uint8_t* encodeU29(uint8_t* r, uint32_t n);
+
 		static uint8_t* encodeBALength(uint8_t* r, uint32_t n);
 
 		/// Increases pos by string length.
@@ -100,24 +159,25 @@ namespace swf {
 			return vec;
 		}
 
+/*
 		inline std::string exportToJSON() {
 			return this->object.jsonObj.dump(4);
 		}
-
-		AMF3_TYPE object;
+*/
+		std::shared_ptr<AMF3_TYPE> object;
 
 	private:
 
-		AMF3_TYPE parseAmf3(const uint8_t* buffer, size_t &pos);
-		void amf3TypeToJSON(nlohmann::basic_json<my_workaround_fifo_map> &, const AMF3_TYPE &);
+		std::shared_ptr<AMF3_TYPE> parseAmf3(const uint8_t* buffer, size_t &pos);
+		//void amf3TypeToJSON(nlohmann::basic_json<my_workaround_fifo_map> &, const AMF3_TYPE &);
 
 		/**
 		 * AMF3 Reference Tables
 		 * See section 2.2 of amf3-file-format-spec.pdf
 		 */
 		std::vector<std::string> stringRefs;
-		std::vector<std::reference_wrapper<AMF3_TYPE>> objRefs;
-		std::vector<AMF3_TRAIT> objTraitsRefs;
+		std::vector<std::shared_ptr<AMF3_TRAIT>> objTraitsRefs;
+		std::vector<std::shared_ptr<AMF3_TYPE>> objRefs;
 	};
 
 } // swf
