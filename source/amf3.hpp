@@ -159,10 +159,7 @@ namespace swf {
 		*/
 		double d;
 		bool operator==(const AMF3_DOUBLE& rhs) const {
-			DIAGNOSTIC_PUSH()
-			DIAGNOSTIC_IGNORE("-Wfloat-equal")
-			return this->d == rhs.d;
-			DIAGNOSTIC_POP()
+			return bit_cast<uint64_t>(this->d) == bit_cast<uint64_t>(rhs.d);;
 		}
 	};
 
