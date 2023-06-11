@@ -80,6 +80,8 @@ namespace swf {
 		/// no tag for story05 and tags can't have the same ID. Regardless, we return
 		/// all symbols with the given ID, in case there is more than one.
 		std::vector<std::string> getSymbolName(size_t id) const;
+		inline uint8_t getVersion() const { return this->version; };
+		inline void setVersion(const uint8_t v) { this->version = v; };
 	private:
 		void parseSwf(const std::vector<uint8_t> &buffer);
 		void fillTagsSymbolName();

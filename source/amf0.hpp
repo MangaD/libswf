@@ -47,14 +47,18 @@ namespace swf {
 		static constexpr uint8_t AVMPLUS_OBJECT_MARKER = 0x11;
 
 		explicit AMF0(const uint8_t *buffer, const size_t buffer_size);
-		inline std::string exportToJSON() {
-			return jsonObj.dump(4);
+		inline std::string to_json_str(const int indent=4) {
+			return jsonObj.dump(indent);
 		}
 		static std::vector<uint8_t> fromJSON(const std::string &js);
 		static void writeStringWithLenPrefixU16(std::vector<uint8_t> &data, const std::string &s);
 
 		/// Increases pos by 8.
 		static double readDouble(const uint8_t* buffer, size_t &pos);
+		static inline double readDouble(const uint8_t* buffer, size_t &&pos) {
+			auto pos2 = pos;
+			return AMF0::readDouble(buffer, pos2);
+		}
 		static std::array<uint8_t, 8> writeDouble(double d);
 	private:
 		void parseAMF0Object(const uint8_t *buffer, const size_t buffer_size, size_t &pos,

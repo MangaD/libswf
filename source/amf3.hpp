@@ -17,6 +17,8 @@
 #include <json.hpp>
 #include <fifo_map.hpp> // https://github.com/nlohmann/fifo_map/blob/master/src/fifo_map.hpp
 
+#include "swf_utils.hpp" // DIAGNOSTIC_WARNING()
+
 namespace swf {
 
 	/**
@@ -38,48 +40,13 @@ namespace swf {
 
 	class AMF3_TYPE {
 	public:
-		explicit inline AMF3_TYPE () : type(0) {}
+		explicit inline AMF3_TYPE (uint8_t t) : type(t) {}
 		uint8_t type; // U8 marker
 	};
 
 	using amf3type_sptr = std::shared_ptr<AMF3_TYPE>;
 
-	class AMF3_INTEGER : public AMF3_TYPE {
-	public:
-		explicit inline AMF3_INTEGER () : i(0) {}
-		/**
-		 * See section 3.6 of amf3-file-format-spec.pdf
-		*/
-		int32_t i;
-	};
-
-	class AMF3_DOUBLE : public AMF3_TYPE {
-	public:
-		explicit inline AMF3_DOUBLE () : d(0) {}
-		/**
-		 * See section 3.7 of amf3-file-format-spec.pdf
-		*/
-		double d;
-	};
-
-	class AMF3_STRING : public AMF3_TYPE {
-	public:
-		explicit inline AMF3_STRING () : s() {}
-		/**
-		 * See section 3.8 of amf3-file-format-spec.pdf
-		*/
-		string_sptr s;
-	};
-
-	class AMF3_ARRAY : public AMF3_TYPE {
-	public:
-		explicit inline AMF3_ARRAY () : associativeNameValues(), denseValues() {}
-		/**
-		 * See section 3.11 of amf3-file-format-spec.pdf
-		*/
-		std::vector<std::pair <string_sptr, amf3type_sptr>> associativeNameValues;
-		std::vector<amf3type_sptr> denseValues;
-	};
+	bool operator==(const amf3type_sptr& lhs, const amf3type_sptr& rhs);
 
 	class AMF3_TRAIT {
 	public:
@@ -87,30 +54,12 @@ namespace swf {
 		string_sptr className;
 		bool isDynamic;
 		std::vector<string_sptr> memberNames;
+		bool operator==(const AMF3_TRAIT& rhs) const;
 	};
 
 	using amf3trait_sptr = std::shared_ptr<AMF3_TRAIT>;
 
-	class AMF3_OBJECT : public AMF3_TYPE {
-	public:
-		explicit inline AMF3_OBJECT () : trait(),
-			dynamicNameValues(), sealedValues() {}
-		/**
-		 * See section 3.11 of amf3-file-format-spec.pdf
-		*/
-		amf3trait_sptr trait;
-		std::vector<std::pair <string_sptr, amf3type_sptr>> dynamicNameValues;
-		std::vector<amf3type_sptr> sealedValues;
-	};
-
-	class AMF3_BYTEARRAY : public AMF3_TYPE {
-	public:
-		explicit inline AMF3_BYTEARRAY () : binaryData() {}
-		/**
-		 * See section 3.14 of amf3-file-format-spec.pdf
-		*/
-		std::vector<uint8_t> binaryData;
-	};
+	bool operator==(const amf3trait_sptr& lhs, const amf3trait_sptr& rhs);
 
 	class AMF3 {
 	public:
@@ -139,6 +88,10 @@ namespace swf {
 		static constexpr uint8_t DICTIONARY_MARKER = 0x11;
 
 		explicit AMF3(const uint8_t* buffer, size_t &pos);
+		explicit inline AMF3(const amf3type_sptr& type) : object(type), stringRefs(),
+			objTraitsRefs(), objRefs() { };
+		explicit inline AMF3(const json& j) : object(), stringRefs(),
+			objTraitsRefs(), objRefs() { this->object = AMF3::from_json(j); };
 
 		/// Increases pos by the number of bytes it takes to encode this U29.
 		static uint32_t decodeU29(const uint8_t* buffer, size_t &pos);
@@ -147,7 +100,8 @@ namespace swf {
 		static uint8_t* encodeBALength(uint8_t* r, uint32_t n);
 
 		/// Increases pos by string length.
-		string_sptr readString(const uint8_t* buffer, size_t &pos);
+		string_sptr decodeString(const uint8_t* buffer, size_t &pos);
+		std::vector<uint8_t> encodeString(const std::string& s);
 
 		template <typename T> static std::vector<uint8_t> U29BAToVector(T n) {
 			std::vector<uint8_t> vec;
@@ -156,23 +110,23 @@ namespace swf {
 			return vec;
 		}
 
+		static json to_json(amf3type_sptr &);
+		static amf3type_sptr from_json(const json& j);
 
-		inline std::string exportToJSON() {
-			json j = this->to_json(this->object);
-			return j.dump(4);
+		inline std::string to_json_str(const int indent=4) {
+			json j = AMF3::to_json(this->object);
+			return j.dump(indent);
 		}
+
+		inline std::vector<uint8_t> serialize() { return this->serialize(this->object); };
+
+		/// Increases pos by the number of bytes read
+		amf3type_sptr deserialize(const uint8_t* buffer, size_t &pos);
+		std::vector<uint8_t> serialize(const amf3type_sptr&);
 
 		amf3type_sptr object;
 
 	private:
-
-		/// Increases pos by the number of bytes read
-		amf3type_sptr parseAmf3(const uint8_t* buffer, size_t &pos);
-
-		// AMF3_TYPE to_json and from_json - couldn't implement it this way for some reason
-		// https://nlohmann.github.io/json/features/arbitrary_types/
-		json to_json(amf3type_sptr &);
-		//amf3type_sptr from_json(const json& j);
 
 		/**
 		 * AMF3 Reference Tables
@@ -183,7 +137,90 @@ namespace swf {
 		std::vector<amf3type_sptr> objRefs;
 	};
 
+	class AMF3_INTEGER : public AMF3_TYPE {
+	public:
+		explicit inline AMF3_INTEGER () : AMF3_TYPE(AMF3::INTEGER_MARKER), i(0) {}
+		explicit inline AMF3_INTEGER (int32_t _i) : AMF3_TYPE(AMF3::INTEGER_MARKER), i(_i) {}
+		/**
+		 * See section 3.6 of amf3-file-format-spec.pdf
+		*/
+		int32_t i;
+		bool operator==(const AMF3_INTEGER& rhs) const {
+			return this->i == rhs.i;
+		}
+	};
+
+	class AMF3_DOUBLE : public AMF3_TYPE {
+	public:
+		explicit inline AMF3_DOUBLE () : AMF3_TYPE(AMF3::DOUBLE_MARKER), d(0) {}
+		explicit inline AMF3_DOUBLE (double _d) : AMF3_TYPE(AMF3::DOUBLE_MARKER), d(_d) {}
+		/**
+		 * See section 3.7 of amf3-file-format-spec.pdf
+		*/
+		double d;
+		bool operator==(const AMF3_DOUBLE& rhs) const {
+			DIAGNOSTIC_PUSH()
+			DIAGNOSTIC_IGNORE("-Wfloat-equal")
+			return this->d == rhs.d;
+			DIAGNOSTIC_POP()
+		}
+	};
+
+	class AMF3_STRING : public AMF3_TYPE {
+	public:
+		explicit inline AMF3_STRING () : AMF3_TYPE(AMF3::STRING_MARKER), s() {}
+		explicit inline AMF3_STRING (std::string _s) : AMF3_TYPE(AMF3::STRING_MARKER), s() {
+			this->s = std::make_shared<std::string>(_s);
+		}
+		/**
+		 * See section 3.8 of amf3-file-format-spec.pdf
+		*/
+		string_sptr s;
+		bool operator==(const AMF3_STRING& rhs) const {
+			return *(this->s) == *(rhs.s);
+		}
+	};
+
+	class AMF3_ARRAY : public AMF3_TYPE {
+	public:
+		explicit inline AMF3_ARRAY () : AMF3_TYPE(AMF3::ARRAY_MARKER),
+			associativeNameValues(), denseValues() {}
+		/**
+		 * See section 3.11 of amf3-file-format-spec.pdf
+		*/
+		std::vector<std::pair <string_sptr, amf3type_sptr>> associativeNameValues;
+		std::vector<amf3type_sptr> denseValues;
+		bool operator==(const AMF3_ARRAY& rhs) const;
+	};
+
+	class AMF3_OBJECT : public AMF3_TYPE {
+	public:
+		explicit inline AMF3_OBJECT () : AMF3_TYPE(AMF3::OBJECT_MARKER), trait(),
+			dynamicNameValues(), sealedValues() {}
+		/**
+		 * See section 3.11 of amf3-file-format-spec.pdf
+		*/
+		amf3trait_sptr trait;
+		std::vector<std::pair <string_sptr, amf3type_sptr>> dynamicNameValues;
+		std::vector<amf3type_sptr> sealedValues;
+		bool operator==(const AMF3_OBJECT& rhs) const;
+	};
+
+	class AMF3_BYTEARRAY : public AMF3_TYPE {
+	public:
+		explicit inline AMF3_BYTEARRAY () : AMF3_TYPE(AMF3::BYTE_ARRAY_MARKER), binaryData() {}
+		/**
+		 * See section 3.14 of amf3-file-format-spec.pdf
+		*/
+		std::vector<uint8_t> binaryData;
+		bool operator==(const AMF3_BYTEARRAY& rhs) const {
+			return this->binaryData == rhs.binaryData;
+		}
+	};
+
+
 	int u32Toi29(uint32_t u);
+	uint32_t i32Tou29(int32_t i);
 
 } // swf
 
