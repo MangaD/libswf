@@ -514,7 +514,7 @@ json AMF3::to_json(amf3type_sptr & type) {
 	json j;
 
 	if (type->type == AMF3::UNDEFINED_MARKER) {
-		j = "AMF3_UNDEFINED";
+		j = "__AMF3_UNDEFINED__";
 	}
 	else if (type->type == AMF3::NULL_MARKER) {
 		j = nullptr;
@@ -539,7 +539,7 @@ json AMF3::to_json(amf3type_sptr & type) {
 			j = d->d;
 		} else {
 			json j2;
-			j2.emplace_back("AMF3_DOUBLE_NAN");
+			j2.emplace_back("__AMF3_DOUBLE_NAN__");
 			auto arr = AMF0::writeDouble(d->d);
 			for (size_t i = 0; i < 8; ++i) {
 				j2.emplace_back(arr[i]);
@@ -556,7 +556,7 @@ json AMF3::to_json(amf3type_sptr & type) {
 
 		if (!arr->associativeNameValues.empty()) {
 			json j1;
-			j1["AMF3_ARRAY_ASSOCIATIVE"] = nullptr;
+			j1["__AMF3_ARRAY_ASSOCIATIVE__"] = nullptr;
 			for (auto& a : arr->associativeNameValues) {
 				j1.emplace(*(a.first), AMF3::to_json(a.second));
 			}
@@ -583,11 +583,11 @@ json AMF3::to_json(amf3type_sptr & type) {
 			for (auto& a : obj->dynamicNameValues) {
 				j1.emplace(*(a.first), AMF3::to_json(a.second));
 			}
-			j["AMF3_OBJECT_DYNAMIC"] = j1;
+			j["__AMF3_OBJECT_DYNAMIC__"] = j1;
 		}
 
-		j["AMF3_OBJECT_CLASSNAME"] = *(obj->trait->className);
-		j["AMF3_OBJECT_IS_DYNAMIC"] = obj->trait->isDynamic;
+		j["__AMF3_OBJECT_CLASSNAME__"] = *(obj->trait->className);
+		j["__AMF3_OBJECT_IS_DYNAMIC__"] = obj->trait->isDynamic;
 
 	}
 	else {
@@ -611,13 +611,13 @@ amf3type_sptr AMF3::from_json(const json& j) {
 		return make_shared<AMF3_DOUBLE>(j.get<double>());
 	} else if (j.is_string()) {
 		string s = j.get<string>();
-		if (s == "AMF3_UNDEFINED") {
+		if (s == "__AMF3_UNDEFINED__") {
 			return make_shared<AMF3_TYPE>(AMF3::UNDEFINED_MARKER);
 		} else {
 			return make_shared<AMF3_STRING>(s);
 		}
 	} else if (j.is_array()) {
-		if (j.size() == 9 && j[0] == "AMF3_DOUBLE_NAN") {
+		if (j.size() == 9 && j[0] == "__AMF3_DOUBLE_NAN__") {
 			array<uint8_t, 8> arr;
 			for (size_t i = 0; i < 8; ++i) {
 				if (j[i+1].is_number_integer()) {
@@ -633,9 +633,9 @@ amf3type_sptr AMF3::from_json(const json& j) {
 		auto arr = make_shared<AMF3_ARRAY>();
 
 		for (auto el : j) {
-			if (el.is_object() && el.contains("AMF3_ARRAY_ASSOCIATIVE")) {
+			if (el.is_object() && el.contains("__AMF3_ARRAY_ASSOCIATIVE__")) {
 				for (auto& [key, value] : el.items()) {
-					if (key != "AMF3_ARRAY_ASSOCIATIVE") {
+					if (key != "__AMF3_ARRAY_ASSOCIATIVE__") {
 						arr->associativeNameValues.emplace_back(make_shared<string>(key),
 						                                        AMF3::from_json(value));
 					}
@@ -653,11 +653,11 @@ amf3type_sptr AMF3::from_json(const json& j) {
 		obj->trait = trait;
 
 		for (auto& [key, value] : j.items()) {
-			if (key == "AMF3_OBJECT_CLASSNAME") {
+			if (key == "__AMF3_OBJECT_CLASSNAME__") {
 				trait->className = make_shared<string>(value.get<string>());
-			} else if (key == "AMF3_OBJECT_IS_DYNAMIC") {
+			} else if (key == "__AMF3_OBJECT_IS_DYNAMIC__") {
 				trait->isDynamic = value.get<bool>();
-			} else if (key == "AMF3_OBJECT_DYNAMIC" && value.is_object()) {
+			} else if (key == "__AMF3_OBJECT_DYNAMIC__" && value.is_object()) {
 				for (auto& [k, v] : value.items()) {
 					obj->dynamicNameValues.emplace_back(make_shared<string>(k),
 					                                    AMF3::from_json(v));
