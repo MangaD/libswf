@@ -6,15 +6,16 @@
  * A note on references:
  *
  * AMF3 introduces references for strings and object traits. Strings in AS are immutable
- * (https://en.wikipedia.org/wiki/ActionScript#Using_data_types), which means that there is
- * no problem with "deep copies" vs "shallow copies" of strings. Changing a string in one
+ * (https://en.wikipedia.org/wiki/ActionScript#Using_data_types). Changing a string in one
  * object will make it point to a new String object and not alter the value for all objects.
- * Therefore, when deserializing a JSON file into AMF3 objects, using references for all
- * repeated occurrences of a string is no problem.
+ * Strings are also compared by value and not by reference. Therefore, when deserializing
+ * a JSON file into AMF3 objects, using references for all repeated occurrences of a string
+ * is no problem.
  *
  * Object trait references also do not exist in AMF0, meaning that there should be no problem
  * with using references for all repeated occurrences of object traits when deserializing a
- * JSON file. Deep copies vs shallow copies of object traits just make no sense.
+ * JSON file. Object traits are only used for sealed members, meaning that they do not change
+ * during runtime.
  *
  * For complex objects, however, there can be circular references and deep copies, thus,
  * their references should be explicit when serializing and deserializing to and from JSON.
@@ -82,7 +83,7 @@ namespace swf {
 	class AMF3_TRAIT {
 	public:
 		explicit inline AMF3_TRAIT() : className(std::make_shared<std::string>("")), isDynamic(false), memberNames() {}
-		string_sptr className;
+		string_sptr className; // empty string is used for anonymous objects
 		bool isDynamic;
 		std::vector<string_sptr> memberNames;
 		bool operator==(const AMF3_TRAIT& rhs) const;

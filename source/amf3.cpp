@@ -581,7 +581,7 @@ json AMF3::to_json(amf3type_sptr & type) {
 				}
 			}
 			if (!obj->dynamicNameValues.empty()) {
-				if (*obj->trait->className == "") { // object without class
+				if (*obj->trait->className == "") { // anonymous object
 					for (auto& a : obj->dynamicNameValues) {
 						j.emplace(*(a.first), AMF3::to_json(a.second));
 					}
@@ -596,8 +596,10 @@ json AMF3::to_json(amf3type_sptr & type) {
 
 			if (!(*obj->trait->className == "")) {
 				j["__AMF3_OBJECT_CLASSNAME__"] = *(obj->trait->className);
-				// An object can be set as dynamic (e.g. dynamic class) and yet have no dynamic values
-				j["__AMF3_OBJECT_IS_DYNAMIC__"] = obj->trait->isDynamic;
+				// A typed object can be set as dynamic (e.g. dynamic class) and yet have no dynamic values
+				if (obj->trait->isDynamic) {
+					j["__AMF3_OBJECT_IS_DYNAMIC__"] = obj->trait->isDynamic;
+				}
 			}
 		}
 	}
@@ -682,7 +684,7 @@ amf3type_sptr AMF3::from_json(const json& j) {
 					obj->sealedValues.emplace_back(AMF3::from_json(value));
 				}
 			}
-		} else { // object has no class, therefore is dynamic
+		} else { // object is anonymous, therefore is dynamic
 			trait->isDynamic = true;
 			for (auto& [key, value] : j.items()) {
 				obj->dynamicNameValues.emplace_back(make_shared<string>(key),
