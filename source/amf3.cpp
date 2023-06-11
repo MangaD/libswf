@@ -307,7 +307,6 @@ std::vector<uint8_t> AMF3::serialize(const amf3type_sptr & value) {
 
 		// if object has been used, make a reference for it
 		if (it != objRefs.end()) {
-SWF_DEBUG("oh no!");
 			size_t index = it - objRefs.begin();
 			vec.insert(vec.end(), std::begin(a), AMF3::encodeU29(a, static_cast<uint32_t>(index << 1)));
 
@@ -459,7 +458,7 @@ uint32_t AMF3::decodeU29(const uint8_t* buffer, size_t &pos) {
  */
 uint8_t* AMF3::encodeU29(uint8_t* r, uint32_t n) {
 	if (n >= 0x20000000) {
-		throw out_of_range("The largest unsigned integer value that can be represented is 2^29 - 1.");
+		throw out_of_range("The largest unsigned integer value that can be represented is 2^29 - 1. Your number is: " + to_string(n));
 	}
 
 	if (n >= 0x200000) { // 4 bytes
