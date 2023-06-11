@@ -49,7 +49,7 @@
 #include <json.hpp>
 #include <fifo_map.hpp> // https://github.com/nlohmann/fifo_map/blob/master/src/fifo_map.hpp
 
-#include "swf_utils.hpp" // DIAGNOSTIC_WARNING()
+#include "swf_utils.hpp" // DIAGNOSTIC_WARNING(), bit_cast
 
 namespace swf {
 
@@ -72,8 +72,8 @@ namespace swf {
 
 	class AMF3_TYPE {
 	public:
-		explicit inline AMF3_TYPE (uint8_t t) : type(t) {}
-		uint8_t type; // U8 marker
+		explicit inline AMF3_TYPE (std::uint8_t t) : type(t) {}
+		std::uint8_t type; // U8 marker
 	};
 
 	using amf3type_sptr = std::shared_ptr<AMF3_TYPE>;
@@ -100,49 +100,49 @@ namespace swf {
 		 * AMF3 marker constants
 		 * See section 3.1 of amf3-file-format-spec.pdf
 		 */
-		static constexpr uint8_t UNDEFINED_MARKER = 0x00;
-		static constexpr uint8_t NULL_MARKER = 0x01;
-		static constexpr uint8_t FALSE_MARKER = 0x02;
-		static constexpr uint8_t TRUE_MARKER = 0x03;
-		static constexpr uint8_t INTEGER_MARKER = 0x04;
-		static constexpr uint8_t DOUBLE_MARKER = 0x05;
-		static constexpr uint8_t STRING_MARKER = 0x06;
-		static constexpr uint8_t XML_DOC_MARKER = 0x07;
-		static constexpr uint8_t DATE_MARKER = 0x08;
-		static constexpr uint8_t ARRAY_MARKER = 0x09;
-		static constexpr uint8_t OBJECT_MARKER = 0x0A;
-		static constexpr uint8_t XML_MARKER = 0x0B;
-		static constexpr uint8_t BYTE_ARRAY_MARKER = 0x0C;
-		static constexpr uint8_t VECTOR_INT_MARKER = 0x0D;
-		static constexpr uint8_t VECTOR_UINT_MARKER = 0x0E;
-		static constexpr uint8_t VECTOR_DOUBLE_MARKER = 0x0F;
-		static constexpr uint8_t VECTOR_OBJECT_MARKER = 0x10;
-		static constexpr uint8_t DICTIONARY_MARKER = 0x11;
+		static constexpr std::uint8_t UNDEFINED_MARKER = 0x00;
+		static constexpr std::uint8_t NULL_MARKER = 0x01;
+		static constexpr std::uint8_t FALSE_MARKER = 0x02;
+		static constexpr std::uint8_t TRUE_MARKER = 0x03;
+		static constexpr std::uint8_t INTEGER_MARKER = 0x04;
+		static constexpr std::uint8_t DOUBLE_MARKER = 0x05;
+		static constexpr std::uint8_t STRING_MARKER = 0x06;
+		static constexpr std::uint8_t XML_DOC_MARKER = 0x07;
+		static constexpr std::uint8_t DATE_MARKER = 0x08;
+		static constexpr std::uint8_t ARRAY_MARKER = 0x09;
+		static constexpr std::uint8_t OBJECT_MARKER = 0x0A;
+		static constexpr std::uint8_t XML_MARKER = 0x0B;
+		static constexpr std::uint8_t BYTE_ARRAY_MARKER = 0x0C;
+		static constexpr std::uint8_t VECTOR_INT_MARKER = 0x0D;
+		static constexpr std::uint8_t VECTOR_UINT_MARKER = 0x0E;
+		static constexpr std::uint8_t VECTOR_DOUBLE_MARKER = 0x0F;
+		static constexpr std::uint8_t VECTOR_OBJECT_MARKER = 0x10;
+		static constexpr std::uint8_t DICTIONARY_MARKER = 0x11;
 
-		explicit AMF3(const uint8_t* buffer, size_t &pos);
+		explicit AMF3(const std::uint8_t* buffer, size_t &pos);
 		explicit inline AMF3(const amf3type_sptr& type) : object(type), stringRefs(),
 			objTraitsRefs(), objRefs() { };
 		explicit inline AMF3(const json& j) : object(), stringRefs(),
 			objTraitsRefs(), objRefs() { this->object = AMF3::from_json(j); };
 
 		/// Increases pos by the number of bytes it takes to encode this U29.
-		static uint32_t decodeU29(const uint8_t* buffer, size_t &pos);
-		static uint8_t* encodeU29(uint8_t* r, uint32_t n);
+		static std::uint32_t decodeU29(const std::uint8_t* buffer, size_t &pos);
+		static std::uint8_t* encodeU29(std::uint8_t* r, std::uint32_t n);
 
-		static uint8_t* encodeBALength(uint8_t* r, uint32_t n);
+		static std::uint8_t* encodeBALength(std::uint8_t* r, std::uint32_t n);
 
 		/// Increases pos by string length.
-		string_sptr decodeString(const uint8_t* buffer, size_t &pos);
-		std::vector<uint8_t> encodeString(const std::string& s);
+		string_sptr decodeString(const std::uint8_t* buffer, size_t &pos);
+		std::vector<std::uint8_t> encodeString(const std::string& s);
 
-		template <typename T> static std::vector<uint8_t> U29BAToVector(T n) {
-			std::vector<uint8_t> vec;
-			uint8_t a[4];
-			vec.insert(vec.end(), std::begin(a), AMF3::encodeBALength(a, static_cast<uint32_t>(n)));
+		template <typename T> static std::vector<std::uint8_t> U29BAToVector(T n) {
+			std::vector<std::uint8_t> vec;
+			std::uint8_t a[4];
+			vec.insert(vec.end(), std::begin(a), AMF3::encodeBALength(a, static_cast<std::uint32_t>(n)));
 			return vec;
 		}
 
-		static json to_json(amf3type_sptr &);
+		static json to_json(const amf3type_sptr &);
 		static amf3type_sptr from_json(const json& j);
 
 		inline std::string to_json_str(const int indent=4) {
@@ -150,11 +150,10 @@ namespace swf {
 			return j.dump(indent);
 		}
 
-		inline std::vector<uint8_t> serialize() { return this->serialize(this->object); };
-
 		/// Increases pos by the number of bytes read
-		amf3type_sptr deserialize(const uint8_t* buffer, size_t &pos);
-		std::vector<uint8_t> serialize(const amf3type_sptr&);
+		amf3type_sptr deserialize(const std::uint8_t* buffer, size_t &pos);
+		inline std::vector<std::uint8_t> serialize() { return this->serialize(this->object); };
+		std::vector<std::uint8_t> serialize(const amf3type_sptr&);
 
 		amf3type_sptr object;
 
@@ -172,11 +171,11 @@ namespace swf {
 	class AMF3_INTEGER : public AMF3_TYPE {
 	public:
 		explicit inline AMF3_INTEGER () : AMF3_TYPE(AMF3::INTEGER_MARKER), i(0) {}
-		explicit inline AMF3_INTEGER (int32_t _i) : AMF3_TYPE(AMF3::INTEGER_MARKER), i(_i) {}
+		explicit inline AMF3_INTEGER (std::int32_t _i) : AMF3_TYPE(AMF3::INTEGER_MARKER), i(_i) {}
 		/**
 		 * See section 3.6 of amf3-file-format-spec.pdf
-		*/
-		int32_t i;
+		 */
+		std::int32_t i;
 		bool operator==(const AMF3_INTEGER& rhs) const {
 			return this->i == rhs.i;
 		}
@@ -188,10 +187,11 @@ namespace swf {
 		explicit inline AMF3_DOUBLE (double _d) : AMF3_TYPE(AMF3::DOUBLE_MARKER), d(_d) {}
 		/**
 		 * See section 3.7 of amf3-file-format-spec.pdf
-		*/
+		 */
 		double d;
 		bool operator==(const AMF3_DOUBLE& rhs) const {
-			return bit_cast<uint64_t>(this->d) == bit_cast<uint64_t>(rhs.d);;
+			// bit_cast is defined in swf_utils.hpp for compatibility with < c++20
+			return bit_cast<std::uint64_t>(this->d) == bit_cast<std::uint64_t>(rhs.d);
 		}
 	};
 
@@ -203,7 +203,7 @@ namespace swf {
 		}
 		/**
 		 * See section 3.8 of amf3-file-format-spec.pdf
-		*/
+		 */
 		string_sptr s;
 		bool operator==(const AMF3_STRING& rhs) const {
 			return *(this->s) == *(rhs.s);
@@ -216,7 +216,7 @@ namespace swf {
 			associativeNameValues(), denseValues() {}
 		/**
 		 * See section 3.11 of amf3-file-format-spec.pdf
-		*/
+		 */
 		int ref;
 		std::vector<std::pair <string_sptr, amf3type_sptr>> associativeNameValues;
 		std::vector<amf3type_sptr> denseValues;
@@ -229,7 +229,7 @@ namespace swf {
 			dynamicNameValues(), sealedValues() {}
 		/**
 		 * See section 3.11 of amf3-file-format-spec.pdf
-		*/
+		 */
 		int ref;
 		amf3trait_sptr trait;
 		std::vector<std::pair <string_sptr, amf3type_sptr>> dynamicNameValues;
@@ -242,17 +242,17 @@ namespace swf {
 		explicit inline AMF3_BYTEARRAY () : AMF3_TYPE(AMF3::BYTE_ARRAY_MARKER), ref(-1), binaryData() {}
 		/**
 		 * See section 3.14 of amf3-file-format-spec.pdf
-		*/
+		 */
 		int ref;
-		std::vector<uint8_t> binaryData;
+		std::vector<std::uint8_t> binaryData;
 		bool operator==(const AMF3_BYTEARRAY& rhs) const {
 			return this->binaryData == rhs.binaryData;
 		}
 	};
 
 
-	int u32Toi29(uint32_t u);
-	uint32_t i32Tou29(int32_t i);
+	int u32Toi29(std::uint32_t u);
+	std::uint32_t i32Tou29(std::int32_t i);
 
 } // swf
 

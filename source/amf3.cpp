@@ -502,7 +502,7 @@ uint8_t* AMF3::encodeBALength(uint8_t* r, uint32_t n) {
 	return AMF3::encodeU29(r, (n << 1) | 1);
 }
 
-json AMF3::to_json(amf3type_sptr & type) {
+json AMF3::to_json(const amf3type_sptr & type) {
 
 	json j;
 
