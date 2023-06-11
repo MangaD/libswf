@@ -573,6 +573,15 @@ json AMF3::to_json(const amf3type_sptr & type) {
 		if (obj->ref >= 0) {
 			j["__AMF3_OBJ_REF__"] = obj->ref;
 		} else {
+
+			if (!(*obj->trait->className == "")) {
+				j["__AMF3_OBJECT_CLASSNAME__"] = *(obj->trait->className);
+				// A typed object can be set as dynamic (e.g. dynamic class) and yet have no dynamic values
+				if (obj->trait->isDynamic) {
+					j["__AMF3_OBJECT_IS_DYNAMIC__"] = obj->trait->isDynamic;
+				}
+			}
+
 			if(!obj->sealedValues.empty()) {
 
 				for (size_t i = 0; i < obj->sealedValues.size(); ++i) {
@@ -591,14 +600,6 @@ json AMF3::to_json(const amf3type_sptr & type) {
 						j1.emplace(*(a.first), AMF3::to_json(a.second));
 					}
 					j["__AMF3_OBJECT_DYNAMIC__"] = j1;
-				}
-			}
-
-			if (!(*obj->trait->className == "")) {
-				j["__AMF3_OBJECT_CLASSNAME__"] = *(obj->trait->className);
-				// A typed object can be set as dynamic (e.g. dynamic class) and yet have no dynamic values
-				if (obj->trait->isDynamic) {
-					j["__AMF3_OBJECT_IS_DYNAMIC__"] = obj->trait->isDynamic;
 				}
 			}
 		}
