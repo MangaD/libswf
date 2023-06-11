@@ -12,8 +12,7 @@ libswf is a C++17 library for extracting and replacing SWF resources.
 - Export and replace MP3.
 - Export and replace images of `DefineBitsLossless` and `DefineBitsLossless2` tags.
 - Export and replace binary data of `DefineBinaryData` tag.
-- Deserializing AMF3 ByteArrays. AMF3 manipulation needs a lot of work.
-- Exporting AMF0 as JSON (not all data types), needs work.
+- Serializing and deserializing AMF0 and AMF3 (not all data types). Exporting and importing to JSON.
 
 ## Usage example
 
