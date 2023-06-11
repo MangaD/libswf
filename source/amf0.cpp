@@ -19,7 +19,7 @@
 using namespace std;
 using namespace swf;
 
-void AMF0::init(const uint8_t* buffer, size_t &pos) {
+AMF0::AMF0(const uint8_t* buffer, size_t &pos) : object() {
 	this->object = deserialize(buffer, pos);
 }
 

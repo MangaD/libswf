@@ -63,14 +63,8 @@ namespace swf {
 		static constexpr std::uint8_t TYPED_OBJECT_MARKER = 0x10;
 		static constexpr std::uint8_t AVMPLUS_OBJECT_MARKER = 0x11;
 
-		explicit AMF0(const std::uint8_t* buffer, size_t &pos) : object() {
-			init(buffer, pos);
-		}
-		explicit AMF0(const std::uint8_t* buffer) : object() {
-			size_t pos = 0;
-			init(buffer, pos);
-		}
-		void init(const std::uint8_t* buffer, size_t &pos);
+		explicit AMF0(const std::uint8_t* buffer, size_t& pos);
+		explicit AMF0(const std::uint8_t* buffer, size_t&& pos = 0) : AMF0(buffer,pos) {}
 		explicit inline AMF0(const amf0type_sptr& type) : object(type) { };
 		explicit inline AMF0(const json& j) : object() { this->object = AMF0::from_json(j); };
 

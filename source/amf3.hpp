@@ -119,7 +119,8 @@ namespace swf {
 		static constexpr std::uint8_t VECTOR_OBJECT_MARKER = 0x10;
 		static constexpr std::uint8_t DICTIONARY_MARKER = 0x11;
 
-		explicit AMF3(const std::uint8_t* buffer, size_t &pos);
+		explicit AMF3(const std::uint8_t* buffer, size_t& pos);
+		explicit AMF3(const std::uint8_t* buffer, size_t&& pos = 0) : AMF3(buffer,pos) {}
 		explicit inline AMF3(const amf3type_sptr& type) : object(type), stringRefs(),
 			objTraitsRefs(), objRefs() { };
 		explicit inline AMF3(const json& j) : object(), stringRefs(),
