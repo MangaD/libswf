@@ -2,6 +2,37 @@
  * libswf - AMF3 class
  *
  * Documentation in 'amf3-file-format-spec.pdf' file.
+ *
+ * A note on references:
+ *
+ * AMF3 introduces references for strings and object traits. Strings in AS are immutable
+ * (https://en.wikipedia.org/wiki/ActionScript#Using_data_types), which means that there is
+ * no problem with "deep copies" vs "shallow copies" of strings. Changing a string in one
+ * object will make it point to a new String object and not alter the value for all objects.
+ * Therefore, when deserializing a JSON file into AMF3 objects, using references for all
+ * repeated occurrences of a string is no problem.
+ *
+ * Object trait references also do not exist in AMF0, meaning that there should be no problem
+ * with using references for all repeated occurrences of object traits when deserializing a
+ * JSON file. Deep copies vs shallow copies of object traits just make no sense.
+ *
+ * For complex objects, however, there can be circular references and deep copies, thus,
+ * their references should be explicit when serializing and deserializing to and from JSON.
+ *
+ * A note on dynamic objects:
+ *
+ * Normal classes in ActionScript do not allow properties to be added and removed from
+ * instances at runtime. These are called sealed classes. However, AS supports dynamic classes,
+ * example:
+ *   dynamic class Person {
+ *     var name:String;
+ *   }
+ * in which case, (public) dynamic properties can be added and removed. Objects without a
+ * class name are dynamic as they have no defined structure.
+ *
+ * References:
+ * - http://flexblog.faratasystems.com/index.php/actionscript-3-dynamic-classes/
+ * - https://coursesweb.net/actionscript/create-objects-as3
  */
 
 #ifndef AMF3_HPP
@@ -50,7 +81,7 @@ namespace swf {
 
 	class AMF3_TRAIT {
 	public:
-		explicit inline AMF3_TRAIT() : className(), isDynamic(false), memberNames() {}
+		explicit inline AMF3_TRAIT() : className(std::make_shared<std::string>("")), isDynamic(false), memberNames() {}
 		string_sptr className;
 		bool isDynamic;
 		std::vector<string_sptr> memberNames;
@@ -180,11 +211,12 @@ namespace swf {
 
 	class AMF3_ARRAY : public AMF3_TYPE {
 	public:
-		explicit inline AMF3_ARRAY () : AMF3_TYPE(AMF3::ARRAY_MARKER),
+		explicit inline AMF3_ARRAY () : AMF3_TYPE(AMF3::ARRAY_MARKER), ref(-1),
 			associativeNameValues(), denseValues() {}
 		/**
 		 * See section 3.11 of amf3-file-format-spec.pdf
 		*/
+		int ref;
 		std::vector<std::pair <string_sptr, amf3type_sptr>> associativeNameValues;
 		std::vector<amf3type_sptr> denseValues;
 		bool operator==(const AMF3_ARRAY& rhs) const;
@@ -192,11 +224,12 @@ namespace swf {
 
 	class AMF3_OBJECT : public AMF3_TYPE {
 	public:
-		explicit inline AMF3_OBJECT () : AMF3_TYPE(AMF3::OBJECT_MARKER), trait(),
+		explicit inline AMF3_OBJECT () : AMF3_TYPE(AMF3::OBJECT_MARKER), ref(-1), trait(),
 			dynamicNameValues(), sealedValues() {}
 		/**
 		 * See section 3.11 of amf3-file-format-spec.pdf
 		*/
+		int ref;
 		amf3trait_sptr trait;
 		std::vector<std::pair <string_sptr, amf3type_sptr>> dynamicNameValues;
 		std::vector<amf3type_sptr> sealedValues;
@@ -205,10 +238,11 @@ namespace swf {
 
 	class AMF3_BYTEARRAY : public AMF3_TYPE {
 	public:
-		explicit inline AMF3_BYTEARRAY () : AMF3_TYPE(AMF3::BYTE_ARRAY_MARKER), binaryData() {}
+		explicit inline AMF3_BYTEARRAY () : AMF3_TYPE(AMF3::BYTE_ARRAY_MARKER), ref(-1), binaryData() {}
 		/**
 		 * See section 3.14 of amf3-file-format-spec.pdf
 		*/
+		int ref;
 		std::vector<uint8_t> binaryData;
 		bool operator==(const AMF3_BYTEARRAY& rhs) const {
 			return this->binaryData == rhs.binaryData;

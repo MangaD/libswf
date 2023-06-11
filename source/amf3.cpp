@@ -96,7 +96,8 @@ amf3type_sptr AMF3::deserialize(const uint8_t* buffer, size_t &pos) {
 		u29 >>= 1;
 
 		if (isRef) {
-			return objRefs[u29];
+			obj->ref = static_cast<int>(u29);
+			return obj;
 		}
 
 		obj->denseValues.reserve(u29); // count of dense portion
@@ -150,7 +151,8 @@ amf3type_sptr AMF3::deserialize(const uint8_t* buffer, size_t &pos) {
 		u29 >>= 1;
 
 		if (isRef) {
-			return objRefs[u29];
+			obj->ref = static_cast<int>(u29);
+			return obj;
 		}
 
 		bool isTraitRef = !(u29 & 0x1);
@@ -222,7 +224,8 @@ amf3type_sptr AMF3::deserialize(const uint8_t* buffer, size_t &pos) {
 		u29 >>= 1;
 
 		if (isRef) {
-			return objRefs[u29];
+			obj->ref = static_cast<int>(u29);
+			return obj;
 		}
 
 		obj->binaryData = { buffer + pos, buffer + pos + u29 };
@@ -276,12 +279,9 @@ std::vector<uint8_t> AMF3::serialize(const amf3type_sptr & value) {
 		auto valA = static_cast<AMF3_ARRAY *>(value.get());
 		uint8_t a[4];
 
-		auto it = find(objRefs.begin(), objRefs.end(), value);
-
 		// if array has been used, make a reference for it
-		if (it != objRefs.end()) {
-			size_t index = it - objRefs.begin();
-			vec.insert(vec.end(), std::begin(a), AMF3::encodeU29(a, static_cast<uint32_t>(index << 1)));
+		if (valA->ref >= 0) {
+			vec.insert(vec.end(), std::begin(a), AMF3::encodeU29(a, static_cast<uint32_t>(valA->ref << 1)));
 		} else {
 			size_t u29 = (valA->denseValues.size() << 1) | 1;
 			vec.insert(vec.end(), std::begin(a), AMF3::encodeU29(a, static_cast<uint32_t>(u29)));
@@ -295,11 +295,6 @@ std::vector<uint8_t> AMF3::serialize(const amf3type_sptr & value) {
 			for (auto &amf3 : valA->denseValues) {
 				concatVectorWithContainer(vec, this->serialize(amf3));
 			}
-			// Empty arrays are not sent by reference. I don't know why but while debugging
-			// Hero Fighter Spt files (namely the 809 - Drew one) this was the case.
-			if (!(valA->denseValues.empty() && valA->associativeNameValues.empty())) {
-				objRefs.emplace_back(value);
-			}
 		}
 
 	} else if (value->type == AMF3::OBJECT_MARKER) {
@@ -307,13 +302,9 @@ std::vector<uint8_t> AMF3::serialize(const amf3type_sptr & value) {
 		auto valO = static_cast<AMF3_OBJECT *>(value.get());
 		uint8_t a[4];
 
-		auto it = find(objRefs.begin(), objRefs.end(), value);
-
 		// if object has been used, make a reference for it
-		if (it != objRefs.end()) {
-			size_t index = it - objRefs.begin();
-			vec.insert(vec.end(), std::begin(a), AMF3::encodeU29(a, static_cast<uint32_t>(index << 1)));
-
+		if (valO->ref >= 0) {
+			vec.insert(vec.end(), std::begin(a), AMF3::encodeU29(a, static_cast<uint32_t>(valO->ref << 1)));
 		} else {
 
 			auto it2 = find(objTraitsRefs.begin(), objTraitsRefs.end(), valO->trait);
@@ -354,11 +345,9 @@ std::vector<uint8_t> AMF3::serialize(const amf3type_sptr & value) {
 		auto valBA = static_cast<AMF3_BYTEARRAY *>(value.get());
 		uint8_t a[4];
 
-		auto it = find(objRefs.begin(), objRefs.end(), value);
 		// if byte array has been used, make a reference for it
-		if (it != objRefs.end()) {
-			size_t index = it - objRefs.begin();
-			vec.insert(vec.end(), std::begin(a), AMF3::encodeU29(a, static_cast<uint32_t>(index << 1)));
+		if (valBA->ref >= 0) {
+			vec.insert(vec.end(), std::begin(a), AMF3::encodeU29(a, static_cast<uint32_t>(valBA->ref << 1)));
 		} else {
 			size_t u29 = (valBA->binaryData.size() << 1) | 1;
 			vec.insert(vec.end(), std::begin(a), AMF3::encodeU29(a, static_cast<uint32_t>(u29)));
@@ -558,43 +547,59 @@ json AMF3::to_json(amf3type_sptr & type) {
 	else if (type->type == AMF3::ARRAY_MARKER) {
 		auto arr = static_cast<AMF3_ARRAY *>(type.get());
 
-		j = json::array(); // important for empty arrays
+		if (arr->ref >= 0) {
+			j["__AMF3_OBJ_REF__"] = arr->ref;
+		} else {
+			j = json::array(); // important for empty arrays
 
-		if (!arr->associativeNameValues.empty()) {
-			json j1;
-			j1["__AMF3_ARRAY_ASSOCIATIVE__"] = nullptr;
-			for (auto& a : arr->associativeNameValues) {
-				j1.emplace(*(a.first), AMF3::to_json(a.second));
+			if (!arr->associativeNameValues.empty()) {
+				json j1;
+				j1["__AMF3_ARRAY_ASSOCIATIVE__"] = nullptr;
+				for (auto& a : arr->associativeNameValues) {
+					j1.emplace(*(a.first), AMF3::to_json(a.second));
+				}
+				j.emplace_back(j1);
 			}
-			j.emplace_back(j1);
-		}
-		if(!arr->denseValues.empty()) {
-			for (auto& a : arr->denseValues) {
-				j.emplace_back(AMF3::to_json(a));
+			if(!arr->denseValues.empty()) {
+				for (auto& a : arr->denseValues) {
+					j.emplace_back(AMF3::to_json(a));
+				}
 			}
 		}
 	}
 	else if (type->type == AMF3::OBJECT_MARKER) {
 		auto obj = static_cast<AMF3_OBJECT *>(type.get());
 
-		if(!obj->sealedValues.empty()) {
+		if (obj->ref >= 0) {
+			j["__AMF3_OBJ_REF__"] = obj->ref;
+		} else {
+			if(!obj->sealedValues.empty()) {
 
-			for (size_t i = 0; i < obj->sealedValues.size(); ++i) {
-				json obj2 = AMF3::to_json(obj->sealedValues[i]);
-				j.emplace(*(obj->trait->memberNames[i]), obj2);
+				for (size_t i = 0; i < obj->sealedValues.size(); ++i) {
+					json obj2 = AMF3::to_json(obj->sealedValues[i]);
+					j.emplace(*(obj->trait->memberNames[i]), obj2);
+				}
+			}
+			if (!obj->dynamicNameValues.empty()) {
+				if (*obj->trait->className == "") { // object without class
+					for (auto& a : obj->dynamicNameValues) {
+						j.emplace(*(a.first), AMF3::to_json(a.second));
+					}
+				} else {
+					json j1;
+					for (auto& a : obj->dynamicNameValues) {
+						j1.emplace(*(a.first), AMF3::to_json(a.second));
+					}
+					j["__AMF3_OBJECT_DYNAMIC__"] = j1;
+				}
+			}
+
+			if (!(*obj->trait->className == "")) {
+				j["__AMF3_OBJECT_CLASSNAME__"] = *(obj->trait->className);
+				// An object can be set as dynamic (e.g. dynamic class) and yet have no dynamic values
+				j["__AMF3_OBJECT_IS_DYNAMIC__"] = obj->trait->isDynamic;
 			}
 		}
-		if (!obj->dynamicNameValues.empty()) {
-			json j1;
-			for (auto& a : obj->dynamicNameValues) {
-				j1.emplace(*(a.first), AMF3::to_json(a.second));
-			}
-			j["__AMF3_OBJECT_DYNAMIC__"] = j1;
-		}
-
-		j["__AMF3_OBJECT_CLASSNAME__"] = *(obj->trait->className);
-		j["__AMF3_OBJECT_IS_DYNAMIC__"] = obj->trait->isDynamic;
-
 	}
 	else {
 		stringstream stream;
@@ -658,19 +663,30 @@ amf3type_sptr AMF3::from_json(const json& j) {
 		auto obj = make_shared<AMF3_OBJECT>();
 		obj->trait = trait;
 
-		for (auto& [key, value] : j.items()) {
-			if (key == "__AMF3_OBJECT_CLASSNAME__") {
-				trait->className = make_shared<string>(value.get<string>());
-			} else if (key == "__AMF3_OBJECT_IS_DYNAMIC__") {
-				trait->isDynamic = value.get<bool>();
-			} else if (key == "__AMF3_OBJECT_DYNAMIC__" && value.is_object()) {
-				for (auto& [k, v] : value.items()) {
-					obj->dynamicNameValues.emplace_back(make_shared<string>(k),
-					                                    AMF3::from_json(v));
+		if (j.contains("__AMF3_OBJ_REF__")) {
+			obj->ref = j["__AMF3_OBJ_REF__"].get<int>();
+		} else if (j.contains("__AMF3_OBJECT_CLASSNAME__")) {
+			for (auto& [key, value] : j.items()) {
+				if (key == "__AMF3_OBJECT_CLASSNAME__") {
+					trait->className = make_shared<string>(value.get<string>());
 				}
-			} else {
-				trait->memberNames.emplace_back(make_shared<string>(key));
-				obj->sealedValues.emplace_back(AMF3::from_json(value));
+				else if (key == "__AMF3_OBJECT_IS_DYNAMIC__") {
+					trait->isDynamic = value.get<bool>();
+				} else if (key == "__AMF3_OBJECT_DYNAMIC__" && value.is_object()) {
+					for (auto& [k, v] : value.items()) {
+						obj->dynamicNameValues.emplace_back(make_shared<string>(k),
+						                                    AMF3::from_json(v));
+					}
+				} else {
+					trait->memberNames.emplace_back(make_shared<string>(key));
+					obj->sealedValues.emplace_back(AMF3::from_json(value));
+				}
+			}
+		} else { // object has no class, therefore is dynamic
+			trait->isDynamic = true;
+			for (auto& [key, value] : j.items()) {
+				obj->dynamicNameValues.emplace_back(make_shared<string>(key),
+				                                    AMF3::from_json(value));
 			}
 		}
 
@@ -681,6 +697,8 @@ amf3type_sptr AMF3::from_json(const json& j) {
 
 }
 
+// There is no need to compare two arrays. There can be deep copies, so two arrays having the
+// same elements does not mean they are the same array object.
 bool AMF3_ARRAY::operator==(const AMF3_ARRAY& rhs) const {
 	bool assocEq = std::equal(this->associativeNameValues.begin(), this->associativeNameValues.end(),
 	                          rhs.associativeNameValues.begin(), rhs.associativeNameValues.end(),
@@ -706,6 +724,8 @@ bool AMF3_TRAIT::operator==(const AMF3_TRAIT& rhs) const {
 	                  [](auto& lhs, auto& rhs2){ return *lhs == *rhs2; });
 }
 
+// There is no need to compare two objects. There can be deep copies, so two objects having the
+// same properties does not mean they are the same object.
 bool AMF3_OBJECT::operator==(const AMF3_OBJECT& rhs) const {
 	if (this->trait != rhs.trait) { return false; }
 	bool dynamEq = std::equal(this->dynamicNameValues.begin(), this->dynamicNameValues.end(),
