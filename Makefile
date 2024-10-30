@@ -104,7 +104,7 @@ ifneq ($(BUILD),release)
 	TEST_OBJ_FOLDER  = build
 	TARGETS += $(TEST_BIN)
 	LDFLAGS = -L$(LIB_FOLDER) -L$(BIN_FOLDER)
-	LDLIBS += -lz -llzmasdk -llodepng # -llzma
+	LDLIBS += -lz -llzmasdk -llodepng -lCatch2Main -lCatch2 # -llzma
 
 	# sanitize
 	LDLIBS += -fsanitize=undefined,address -fno-sanitize-recover=all -lasan

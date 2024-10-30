@@ -6,6 +6,8 @@
 #include <vector>    // std::vector
 #include <stdexcept> // std::out_of_range, std::invalid_argument
 #include <cstring>   // strlen
+#include <cstdint>   // uint8_t
+#include <string>    // std::to_string
 
 #ifndef SWF_DYNAMIC_BITSET_HPP
 #define SWF_DYNAMIC_BITSET_HPP
@@ -36,13 +38,13 @@ namespace swf_utils {
 					throw std::out_of_range("Value '" + std::to_string(value_bak) +
 					    "' doesn't fit in " + std::to_string(size) + " bits.");
 				}
-				bits[i] = value % 2;
-				value = value / 2;
+				bits[i] = static_cast<uint8_t>(value % 2);
+				value = static_cast<uint8_t>(value / 2);
 			}
 		}
 
-		inline std::vector<bool>::reference operator[](size_t pos) { return bits[pos]; }
-		inline bool operator[](size_t pos) const { return bits[pos]; }
+		inline std::vector<uint8_t>::reference operator[](size_t pos) { return bits[pos]; }
+		inline bool operator[](size_t pos) const { return static_cast<bool>(bits[pos]); }
 
 		unsigned long to_ulong() const;
 
@@ -57,7 +59,7 @@ namespace swf_utils {
 		dynamic_bitset operator~() const;
 
 	private:
-		std::vector<bool> bits;
+		std::vector<uint8_t> bits;
 
 		inline friend std::ostream & operator << (std::ostream &out, const dynamic_bitset &b) {
 			for (auto i = b.bits.end()-1; i != b.bits.begin()-1; --i) {
@@ -82,7 +84,7 @@ namespace swf_utils {
 		}
 	}
 
-	void strToBits(const char * bits_s, std::vector<bool> &bits);
+	void strToBits(const char * bits_s, std::vector<uint8_t> &bits);
 
 }
 

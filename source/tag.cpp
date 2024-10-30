@@ -18,7 +18,7 @@ size_t Tag::parseTagHeader(uint8_t *buffer, size_t &pos) {
 	uint16_t tagCodeAndLength = bytestodec_le<uint16_t>(buffer + pos);
 	pos += 2;
 
-	this->type = (tagCodeAndLength >> 6);
+	this->type = static_cast<short int>(tagCodeAndLength >> 6);
 	uint32_t length = tagCodeAndLength & 0x3F;
 
 	if (length == 0b111111) {

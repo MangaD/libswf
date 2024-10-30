@@ -1,6 +1,6 @@
 # Reference: https://git.mel.vin/template/c/commit/584b866fe79411b3f361e79fe0c0d68a3b278b9e
 
-image: ubuntu:20.04
+image: ubuntu:24.04
 
 stages:
   - build
@@ -17,7 +17,7 @@ variables:
 build:
   stage: build
   before_script:
-    - apt update -qq && apt -o dir::cache::archives="apt-cache" install -y build-essential g++ g++-multilib zlib1g-dev cmake git gcovr ggcov lcov
+    - apt update -qq && apt -o dir::cache::archives="apt-cache" install -y build-essential g++ g++-multilib zlib1g-dev cmake git gcovr lcov catch2
     - git submodule sync --recursive
     - git submodule update --init --recursive
   script:
@@ -39,10 +39,10 @@ test:
   dependencies:
     - build
   before_script:
-    - apt update -qq && apt -o dir::cache::archives="apt-cache" install -y build-essential g++ g++-multilib zlib1g-dev cmake git gcovr ggcov lcov
+    - apt update -qq && apt -o dir::cache::archives="apt-cache" install -y build-essential g++ g++-multilib zlib1g-dev cmake git gcovr lcov catch2
   script:
     - ./bin/debug/libswf_test
-    - gcov source/*.cpp
+    - gcov build/*.o
     - lcov --base-directory . --directory build/ --capture --output-file coverage.info
     - lcov --list coverage.info
   artifacts:

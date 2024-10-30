@@ -56,21 +56,16 @@ SWF::SWF(const vector<uint8_t> &buffer) : tags(), version(),
  * 2. SWF binary length
  * 3. Footer 0xFA123456 (little endian)
  * 4. SWF binary
- *
- * Compression:
- * 0 - uncompressed
- * 1 - zlib
- * 2 - lzma
  */
-vector<uint8_t> SWF::exportExe(const vector<uint8_t> &proj, int compression) {
+vector<uint8_t> SWF::exportExe(const vector<uint8_t> &proj, CompressionChoice compression) {
 
 	vector<uint8_t> bytes = this->toBytes();
 
-	if (compression == 1) {
+	if (compression == CompressionChoice::zlib) {
 		bytes = zlibCompress(bytes);
-	} else if (compression == 2) {
+	} else if (compression == CompressionChoice::lzma) {
 		bytes = lzmaCompress(bytes);
-	} else if (compression != 0) {
+	} else if (compression != CompressionChoice::uncompressed) {
 		throw swf_exception("Invalid compression option.");
 	}
 
@@ -116,21 +111,16 @@ vector<uint8_t> SWF::exportExe(const vector<uint8_t> &proj, int compression) {
 
 /**
  * Export SWF
- *
- * Compression:
- * 0 - uncompressed
- * 1 - zlib
- * 2 - lzma
  */
-vector<uint8_t> SWF::exportSwf(int compression) {
+vector<uint8_t> SWF::exportSwf(CompressionChoice compression) {
 
 	vector<uint8_t> bytes = this->toBytes();
 
-	if (compression == 1) {
+	if (compression == CompressionChoice::zlib) {
 		bytes = zlibCompress(bytes);
-	} else if (compression == 2) {
+	} else if (compression == CompressionChoice::lzma) {
 		bytes = lzmaCompress(bytes);
-	} else if (compression != 0) {
+	} else if (compression != CompressionChoice::uncompressed) {
 		throw swf_exception("Invalid compression option.");
 	}
 
@@ -381,6 +371,7 @@ void SWF::debugFrameSize(const vector<uint8_t> &fs, size_t nbits) {
 	subBitset(framesize_bitset, yMin_bitset, 5 + 16 * 2);
 	subBitset(framesize_bitset, yMax_bitset, 5 + 16 * 3);
 
+#ifdef SWF_DEBUG_BUILD
 	int xMin = static_cast<int>(xMin_bitset.to_ulong());
 	int xMax = static_cast<int>(xMax_bitset.to_ulong());
 	int yMin = static_cast<int>(yMin_bitset.to_ulong());
@@ -390,6 +381,7 @@ void SWF::debugFrameSize(const vector<uint8_t> &fs, size_t nbits) {
 	SWF_DEBUG("\tXmax: " << xMax << " twips (" << twipsToPx(xMax) << " px)");
 	SWF_DEBUG("\tYmin: " << yMin << " twips (" << twipsToPx(yMin) << " px)");
 	SWF_DEBUG("\tYmax: " << yMax << " twips (" << twipsToPx(yMax) << " px)");
+#endif
 }
 
 vector<Tag *> SWF::getTagsOfType(int type) {

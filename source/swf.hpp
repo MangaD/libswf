@@ -46,6 +46,12 @@ namespace swf {
 		const std::array<uint8_t, 4> footer = { 0x56, 0x34, 0x12, 0xFA };
 	};
 
+	enum class CompressionChoice {
+		zlib,
+		lzma,
+		uncompressed
+	};
+
 	class SWF {
 	public:
 		explicit SWF(const std::vector<uint8_t> &buffer);
@@ -66,8 +72,8 @@ namespace swf {
 		std::vector<uint8_t> exportImage(size_t imageId);
 		std::vector<uint8_t> exportMp3(size_t soundId);
 		const std::vector<uint8_t>& exportBinary(size_t tagId);
-		std::vector<uint8_t> exportExe(const std::vector<uint8_t> &proj, int compression);
-		std::vector<uint8_t> exportSwf(int compression);
+		std::vector<uint8_t> exportExe(const std::vector<uint8_t> &proj, CompressionChoice);
+		std::vector<uint8_t> exportSwf(CompressionChoice);
 		void replaceImg(const std::vector<uint8_t> &imgBuf, size_t imageId);
 		void replaceMp3(const std::vector<uint8_t> &mp3Buf, size_t soundId);
 		void replaceBinary(const std::vector<uint8_t> &binBuf, size_t tagId);

@@ -17,12 +17,12 @@ namespace swf_utils {
 		strToBits(bits_s, bits);
 	}
 
-	void strToBits(const char * bits_s, std::vector<bool> &bits) {
+	void strToBits(const char * bits_s, std::vector<uint8_t> &bits) {
 		for (int i = static_cast<int>(strlen(bits_s)-1); i >= 0; --i) {
 			if (bits_s[i] == '1') {
-				bits.emplace_back(true);
+				bits.emplace_back(1);
 			} else if (bits_s[i] == '0') {
-				bits.emplace_back(false);
+				bits.emplace_back(0);
 			} else {
 				throw std::invalid_argument("String must contain only 0's and 1's.");
 			}
@@ -43,25 +43,24 @@ namespace swf_utils {
 
 	dynamic_bitset& dynamic_bitset::operator&=(const dynamic_bitset& rhs) {
 		for (size_t i = 0, end = std::min(bits.size(),rhs.size()); i < end; ++i) {
-			bits[i] = bits[i] & rhs[i];
+			bits[i] = static_cast<uint8_t>(static_cast<bool>(bits[i]) & static_cast<bool>(rhs[i]));
 		}
 		return *this;
 	}
 
 	dynamic_bitset& dynamic_bitset::operator|=(const dynamic_bitset& rhs) {
 		for (size_t i = 0, end = std::min(bits.size(),rhs.size()); i < end; ++i) {
-			bits[i] = bits[i] | rhs[i];
+			bits[i] = static_cast<uint8_t>(static_cast<bool>(bits[i]) | static_cast<bool>(rhs[i]));
 		}
 		return *this;
 	}
 
 	dynamic_bitset& dynamic_bitset::operator^=(const dynamic_bitset& rhs) {
 		for (size_t i = 0, end = std::min(bits.size(),rhs.size()); i < end; ++i) {
-			bits[i] = bits[i] ^ rhs[i];
+			bits[i] = static_cast<uint8_t>(static_cast<bool>(bits[i]) ^ static_cast<bool>(rhs[i]));
 		}
 		return *this;
 	}
-
 
 	dynamic_bitset dynamic_bitset::operator~() const {
 		dynamic_bitset ds{*this};
@@ -73,7 +72,7 @@ namespace swf_utils {
 
 	dynamic_bitset& dynamic_bitset::operator<<=(size_t n) {
 
-		std::vector<bool> tmp(bits.size(), 0);
+		std::vector<uint8_t> tmp(bits.size(), 0);
 		std::copy ( bits.begin(), bits.begin() + (bits.size()-n), tmp.begin() + n );
 		bits = tmp;
 	/*
@@ -89,7 +88,7 @@ namespace swf_utils {
 
 	dynamic_bitset& dynamic_bitset::operator>>=(size_t n) {
 
-		std::vector<bool> tmp(bits.size(), 0);
+		std::vector<uint8_t> tmp(bits.size(), 0);
 		std::copy ( bits.begin() + n, bits.begin() + (bits.size()-n), tmp.begin() );
 		bits = tmp;
 	/*

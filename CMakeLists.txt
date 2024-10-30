@@ -87,10 +87,12 @@ endif(WIN32)
 add_compile_definitions(_7ZIP_ST)
 add_library(lzmasdk STATIC ${LIB_DIR}/lzma/C/LzmaEnc.c ${LIB_DIR}/lzma/C/LzFind.c
 	${LIB_DIR}/lzma/C/LzmaDec.c ${LIB_DIR}/lzma/C/Lzma2Dec.c)
+set_target_properties(lzmasdk PROPERTIES POSITION_INDEPENDENT_CODE ON)
 
 # Compile LodePNG
 add_compile_definitions(DLODEPNG_NO_COMPILE_ZLIB LODEPNG_NO_COMPILE_DISK)
 add_library(lodepng STATIC ${LIB_DIR}/lodepng/lodepng/lodepng.cpp)
+set_target_properties(lodepng PROPERTIES POSITION_INDEPENDENT_CODE ON)
 
 
 ### BUILD LIBSWF ###
@@ -119,7 +121,9 @@ target_link_libraries( libswf_shared ${ZLIB_LIBRARIES} ) # From find_package(zli
 
 IF(CMAKE_BUILD_TYPE MATCHES Coverage)
 	file(GLOB TEST_SRC_FILES "${TEST_DIR}/*.cpp")
-	list (APPEND SRC_FILES ${TEST_SRC_FILES})
+	list(APPEND SRC_FILES ${TEST_SRC_FILES})
+
+	find_package(Catch2 3 REQUIRED)
 
 	add_executable(libswf_test ${SRC_FILES})
 
@@ -130,6 +134,7 @@ IF(CMAKE_BUILD_TYPE MATCHES Coverage)
 	target_link_libraries( libswf_test lzmasdk ) # LZMA SDK
 	#target_link_libraries(libswf_test lzma) # XZ Utils
 	target_link_libraries( libswf_test lodepng ) # LodePNG
+	target_link_libraries( libswf_test Catch2::Catch2WithMain )
 
 	if( MINGW )
 		set(CMAKE_EXE_LINKER_FLAGS "-static-libgcc -static-libstdc++ -static")

@@ -27,18 +27,20 @@
 	#include <bit> // c++20, bit_cast
 #else
 	// https://en.cppreference.com/w/cpp/numeric/bit_cast
-	template <class To, class From>
-	typename std::enable_if<
-		(sizeof(To) == sizeof(From)) &&
-		std::is_trivially_copyable<From>::value &&
-		std::is_trivial<To>::value,
-		// this implementation requires that To is trivially default constructible
-		To>::type
-	// constexpr support needs compiler magic
-	bit_cast(const From &src) noexcept {
-		To dst;
-		std::memcpy(&dst, &src, sizeof(To));
-		return dst;
+	namespace std {
+		template <class To, class From>
+		typename std::enable_if<
+			(sizeof(To) == sizeof(From)) &&
+			std::is_trivially_copyable<From>::value &&
+			std::is_trivial<To>::value,
+			// this implementation requires that To is trivially default constructible
+			To>::type
+		// constexpr support needs compiler magic
+		bit_cast(const From &src) noexcept {
+			To dst;
+			std::memcpy(&dst, &src, sizeof(To));
+			return dst;
+		}
 	}
 #endif
 

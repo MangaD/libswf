@@ -113,7 +113,7 @@ namespace swf {
 		double d;
 		bool operator==(const AMF0_NUMBER& rhs) const {
 			// bit_cast is defined in swf_utils.hpp for compatibility with < c++20
-			return bit_cast<std::uint64_t>(this->d) == bit_cast<std::uint64_t>(rhs.d);
+			return std::bit_cast<std::uint64_t>(this->d) == std::bit_cast<std::uint64_t>(rhs.d);
 		}
 	};
 

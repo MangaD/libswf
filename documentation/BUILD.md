@@ -10,18 +10,18 @@
 
 #### Linux
 
-**Debian/Ubuntu/Mint:** `$ sudo apt-get install build-essential g++ g++-multilib`
+**Debian/Ubuntu/Mint:** `$ sudo apt-get install build-essential g++ g++-multilib catch2`
 
 For using zlib: `$ sudo apt-get install zlib1g-dev`  
 If using XZ Utils: `$ sudo apt-get install liblzma-dev`
 
 **RedHat/CentOS/Fedora:** `$ sudo yum install gcc gcc-c++ glibc-devel libgcc libstdc++-devel
-glibc-devel.i686 libgcc.i686 libstdc++-devel.i686`
+glibc-devel.i686 libgcc.i686 libstdc++-devel.i686 catch2-devel catch2-devel.i686`
 
 For using zlib: `$ sudo yum install zlib-devel zlib-devel.i686`  
 If using XZ Utils: `$ sudo yum install xz-devel xz-devel.i686`
 
-**Arch:** `$ sudo pacman -S base-devel`
+**Arch:** `$ sudo pacman -S base-devel catch2`
 
 For using zlib: `$ sudo pacman -S zlib`  
 If using XZ Utils: `$ sudo pacman -S xz`
@@ -144,6 +144,11 @@ cd .\vcpkg
 .\vcpkg.exe install zlib:x64-windows
 .\vcpkg.exe install zlib:x86-windows-static
 .\vcpkg.exe install zlib:x64-windows-static
+
+.\vcpkg.exe install catch2:x86-windows
+.\vcpkg.exe install catch2:x64-windows
+.\vcpkg.exe install catch2:x86-windows-static
+.\vcpkg.exe install catch2:x64-windows-static
 
 # Make libraries available
 .\vcpkg.exe integrate install
